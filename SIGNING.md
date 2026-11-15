@@ -1,33 +1,29 @@
-# Upgradeable APK signing (one-time setup)
+# One-secret signing setup (Termux / Android)
 
-Android updates require the **same applicationId**, **same signing certificate**, and a **higher versionCode**. The repository now uses the fixed package ID `dev.vadinyt.liquidnotify`, a GitHub-run-based version code, and a release keystore supplied via GitHub Actions secrets.
+The GitHub Actions workflow needs exactly one **repository secret** named `LIQUIDNOTIFY_SIGNING`.
 
-## Create your private signing key (once)
+Its value consists of two lines:
+1. The existing PKCS12 keystore password
+2. The Base64-encoded contents of `~/liquidnotify-release.jks`
 
-On a trusted computer with Java installed:
+The key alias is fixed as `liquidnotify`. The PKCS12 private key password must equal the keystore password.
+
+## Copy the bundle to the Android clipboard
+
+In Termux (requires Termux:API):
 
 ```sh
-keytool -genkeypair -v -keystore liquidnotify-release.jks -alias liquidnotify -keyalg RSA -keysize 3072 -validity 10000
+read -rsp 'Keystore password: ' LN_PASSWORD; printf '\n'
+{ printf '%s\n' "$LN_PASSWORD"; base64 -w 0 ~/liquidnotify-release.jks; } | termux-clipboard-set
+unset LN_PASSWORD
 ```
 
-Choose and securely store the keystore and key passwords. Keep the .jks file backed up offline. Do not upload it to the public repository or send it in chat.
+Do not paste the bundle into chat, issues, commits or any public page. The clipboard holds sensitive data; clear it after configuring GitHub.
 
-Base64 encode the keystore locally:
-- Linux: `base64 -w0 liquidnotify-release.jks`
-- macOS: `base64 < liquidnotify-release.jks | tr -d '\\n'`
-- Windows PowerShell: `[Convert]::ToBase64String([IO.File]::ReadAllBytes("liquidnotify-release.jks"))`
+Open repository Settings > Secrets and variables > Actions > New repository secret. Name: `LIQUIDNOTIFY_SIGNING`. Paste the clipboard contents as its value.
 
-In GitHub repository Settings > Secrets and variables > Actions, add four **repository secrets**:
+Run Actions > Build LiquidNotify signed APK > Run workflow. Download the artifact `LiquidNotify-signed-upgradeable`.
 
-- `LIQUIDNOTIFY_KEYSTORE_BASE64`: base64-encoded keystore contents
-- `LIQUIDNOTIFY_STORE_PASSWORD`: keystore password
-- `LIQUIDNOTIFY_KEY_ALIAS`: `liquidnotify`
-- `LIQUIDNOTIFY_KEY_PASSWORD`: private key password
+Android upgrades require the same package ID, signing certificate and a higher version code. The previous debug-signed APK will require **one final uninstall** to switch to the signed release series. Keep a private backup of your keystore and password.
 
-Run GitHub Actions. Download the **release** APK artifact. Future release builds signed with the same key can install over one another.
-
-## Important migration note
-
-Previously installed debug APKs use a different certificate. **One final uninstall is necessary** when switching from an old debug APK to the first signed release APK. After that, no uninstall should be needed for subsequent signed releases. If you want to retain existing settings, export them before uninstalling.
-
-Never lose or rotate this keystore without planning an Android signing-key migration. The workflow deliberately fails when secrets are missing instead of producing misleading upgradeable APKs.
+**Security note:** If a keystore was exposed publicly or in chat, treat it as compromised and generate a replacement before distributing public APKs. This is particularly important for an open-source repository.
