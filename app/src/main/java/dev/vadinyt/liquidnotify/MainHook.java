@@ -5,8 +5,6 @@ import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Canvas;
-import android.graphics.drawable.Drawable;
-import java.lang.reflect.Field;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.TypedValue;
@@ -19,7 +17,7 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 /**
  * LiquidNotify unified: configurable native card tint and shape.
- * No replacement shade, touch interception, or fake backdrop blur.
+ * Uses Samsung SemBlurInfo per notification when available, with a clipped sheen fallback.
  * Settings.Global keys can be changed using an authorized adb/root shell.
  */
 public final class MainHook implements IXposedHookLoadPackage {
@@ -34,16 +32,15 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile int radiusDp = 36;
     private static volatile int opacity = 185;
     private static volatile int palette = 0;
+    private static volatile int blurPx = 88;
     private static volatile boolean loggedRadius;
     private static volatile boolean loggedTint;
-    private static volatile boolean loggedDrawable;
-    private static volatile boolean loggedMissingDrawable;
     private static volatile int lastLoggedSignature = Integer.MIN_VALUE;
 
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": unified native glass surfaces");
+        XposedBridge.log(TAG + ": v0.9 Samsung native glass renderer");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -83,7 +80,6 @@ public final class MainHook implements IXposedHookLoadPackage {
                                     + " opacity=" + opacity + " radiusDp=" + radiusDp
                                     + " tint=0x" + Integer.toHexString((Integer) p.args[0]));
                         }
-                        applyDrawableOpacity(view);
                         view.invalidate();
                         if (!loggedTint) {
                             loggedTint = true;
@@ -93,54 +89,40 @@ public final class MainHook implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable t) { XposedBridge.log(TAG + ": tint registration failed " + t); }
-        // Samsung may overwrite drawable alpha while updating notification tint.
-        // Reapply just before drawing the card background, never the content row.
+        // Use the OEM NotificationBackgroundView draw pass. The glass effect
+        // stays behind the notification text, icons, and touch handling.
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "onDraw", Canvas.class, new XC_MethodHook() {
                 @Override protected void beforeHookedMethod(MethodHookParam p) {
                     try {
-                        if (p.thisObject instanceof View) {
-                            View view = (View) p.thisObject;
-                            if (shouldStyle(view) && colorEnabled) applyDrawableOpacity(view);
-                        }
+                        if (!(p.thisObject instanceof View)) return;
+                        View view = (View) p.thisObject;
+                        boolean active = shouldStyle(view) && colorEnabled;
+                        GlassRenderer.beforeDraw(view, active, opacity, blurPx,
+                                dp(view, radiusDp));
                     } catch (Throwable t) {
-                        XposedBridge.log(TAG + ": drawable draw failure " + t);
+                        XposedBridge.log(TAG + ": glass beforeDraw failure " + t);
+                    }
+                }
+
+                @Override protected void afterHookedMethod(MethodHookParam p) {
+                    try {
+                        if (!(p.thisObject instanceof View)) return;
+                        View view = (View) p.thisObject;
+                        boolean active = shouldStyle(view) && colorEnabled;
+                        GlassRenderer.afterDraw(view, (Canvas) p.args[0],
+                                active, dp(view, radiusDp));
+                    } catch (Throwable t) {
+                        XposedBridge.log(TAG + ": glass afterDraw failure " + t);
                     }
                 }
             });
-            XposedBridge.log(TAG + ": drawable alpha hook registered");
+            XposedBridge.log(TAG + ": v0.9 glass draw hooks registered");
         } catch (Throwable t) {
-            XposedBridge.log(TAG + ": drawable alpha registration unavailable " + t);
+            XposedBridge.log(TAG + ": glass draw hook registration failed " + t);
         }
-        XposedBridge.log(TAG + ": unified hooks registered");
-    }
-
-    private static void applyDrawableOpacity(View view) {
-        // mBackground is the drawable painted by NotificationBackgroundView,
-        // not the View's background or the notification content.
-        try {
-            Field field = view.getClass().getDeclaredField("mBackground");
-            field.setAccessible(true);
-            Object object = field.get(view);
-            if (!(object instanceof Drawable)) return;
-            Drawable drawable = (Drawable) object;
-            drawable.setAlpha(opacity);
-            if (!loggedDrawable) {
-                loggedDrawable = true;
-                XposedBridge.log(TAG + ": native background drawable alpha active: " + opacity);
-            }
-        } catch (NoSuchFieldError e) {
-            if (!loggedMissingDrawable) {
-                loggedMissingDrawable = true;
-                XposedBridge.log(TAG + ": mBackground not found on this One UI build");
-            }
-        } catch (Throwable t) {
-            if (!loggedMissingDrawable) {
-                loggedMissingDrawable = true;
-                XposedBridge.log(TAG + ": drawable opacity unavailable " + t);
-            }
-        }
+        XposedBridge.log(TAG + ": v0.9 hooks registered");
     }
 
     private static int baseColor(boolean night, int selected) {
@@ -179,12 +161,13 @@ public final class MainHook implements IXposedHookLoadPackage {
                         radiusDp = readInt(context, "liquidnotify_radius_dp", 36, 18, 48);
                         opacity = readInt(context, "liquidnotify_opacity", 185, 35, 245);
                         palette = readInt(context, "liquidnotify_palette", 0, 0, 2);
+                        blurPx = readInt(context, "liquidnotify_blur_px", 88, 0, 120);
                         if (lastConfigLog < 0 || now - lastConfigLog > 30000L) {
                             lastConfigLog = now;
                             XposedBridge.log(TAG + ": SystemUI reads settings enabled=" + enabled
                                     + " color=" + colorEnabled + " radius=" + radiusEnabled
                                     + " radiusDp=" + radiusDp + " opacity=" + opacity
-                                    + " palette=" + palette);
+                                    + " palette=" + palette + " blurPx=" + blurPx);
                         }
                     } catch (Throwable t) {
                         enabled = false;
