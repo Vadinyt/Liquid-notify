@@ -39,7 +39,6 @@ final class LiquidOptics {
         final Paint curve = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Paint shimmer = new Paint(Paint.ANTI_ALIAS_FLAG);
         float radius = -1f;
-        int palette = -1;
         int intensity = -1;
         long startTime = -1L;
 
@@ -65,7 +64,7 @@ final class LiquidOptics {
     }
 
     static void draw(View view, Canvas canvas, Rect rect, float radiusPx,
-                     int strength, int opacity, int palette) {
+                     int strength, int opacity) {
         if (canvas == null || rect == null || rect.isEmpty() || strength <= 0
                 || view.getVisibility() != View.VISIBLE
                 || rect.width() < 96 || rect.height() < 48) return;
@@ -83,11 +82,10 @@ final class LiquidOptics {
 
         final boolean changed = !st.bounds.equals(rect)
                 || Math.abs(st.radius - rad) > .5f
-                || st.palette != palette || st.intensity != strength;
+                || st.intensity != strength;
         if (changed) {
             st.bounds.set(rect);
             st.radius = rad;
-            st.palette = palette;
             st.intensity = strength;
             st.startTime = SystemClock.uptimeMillis();
 
@@ -103,24 +101,9 @@ final class LiquidOptics {
             st.bottomCurve.lineTo(r - rad, b);
             st.bottomCurve.quadTo(r - rad * .13f, b, r, b - rad);
 
-            final int topTint, midTint, baseTint;
-            switch (palette) {
-                case 1: // pearl graphite
-                    topTint = 0x4FE5EEF7;
-                    midTint = 0x17CAD8E8;
-                    baseTint = 0x1BD1E0EE;
-                    break;
-                case 2: // pastel lavender
-                    topTint = 0x58F4E5FF;
-                    midTint = 0x13DCD1F3;
-                    baseTint = 0x19E8D8FF;
-                    break;
-                default: // pale blue-clear lens
-                    topTint = 0x5DF0F9FF;
-                    midTint = 0x1AD0ECFF;
-                    baseTint = 0x20DDF5FF;
-                    break;
-            }
+            final int topTint = 0x52F4FBFF;
+            final int midTint = 0x12E3F6FF;
+            final int baseTint = 0x16EAF7FF;
             st.glaze.setShader(new LinearGradient(l, t, l, b,
                     new int[]{topTint, midTint, 0x04FFFFFF, baseTint},
                     new float[]{0f, .28f, .78f, 1f},
@@ -136,9 +119,8 @@ final class LiquidOptics {
                     Math.max(rad * 1.45f, width * .23f),
                     new int[]{0x3ADAF9FF, 0x0BD5F5FF, 0x00DAF9FF},
                     new float[]{0f, .42f, 1f}, Shader.TileMode.CLAMP));
-            final int[] rightSpectrum = palette == 2
-                    ? new int[]{0x2BD7B0FD, 0x06D7B0FD, 0x00D7B0FD}
-                    : new int[]{0x2AC6E6FF, 0x07C6E6FF, 0x00C6E6FF};
+            final int[] rightSpectrum =
+                    new int[]{0x22CCEEFF, 0x05CCEEFF, 0x00CCEEFF};
             st.rightGlow.setShader(new RadialGradient(
                     r - rad * .68f, b - rad,
                     Math.max(rad * 1.4f, width * .25f),

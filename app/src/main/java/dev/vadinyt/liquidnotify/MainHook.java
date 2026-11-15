@@ -5,7 +5,6 @@ import android.database.ContentObserver;
 import android.os.Handler;
 import android.os.Looper;
 import android.content.Context;
-import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Canvas;
 import android.os.SystemClock;
@@ -34,10 +33,9 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile boolean enabled = true;
     private static volatile boolean radiusEnabled = true;
     private static volatile int radiusDp = 44;
-    private static volatile int opacity = 104;
-    private static volatile int palette = 0;
-    private static volatile int blurPx = 28;
-    private static volatile int liquidStrength = 86;
+    private static volatile int opacity = 76;
+    private static volatile int blurPx = 22;
+    private static volatile int liquidStrength = 90;
     private static volatile boolean loggedRadius;
     private static volatile boolean loggedTint;
     private static volatile int lastLoggedSignature = Integer.MIN_VALUE;
@@ -58,7 +56,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     }
                 };
                 String[] names = {"liquidnotify_enabled", "liquidnotify_opacity",
-                        "liquidnotify_palette", "liquidnotify_radius_dp", "liquidnotify_blur_px",
+                        "liquidnotify_radius_dp", "liquidnotify_blur_px",
                         "liquidnotify_liquid_strength"};
                 for (String name : names) {
                     view.getContext().getContentResolver().registerContentObserver(
@@ -80,15 +78,15 @@ public final class MainHook implements IXposedHookLoadPackage {
                 if (view != null) {
                     view.post(() -> {
                         if (shouldStyle(view)) {
-                            // Force Samsung to receive the latest palette even
-                            // if its own setTint() does not fire on this update.
+                            // Refresh the single clear-glass material even
+                            // if Samsung's own setTint() is not called.
                             try {
                                 java.lang.reflect.Method method =
                                         view.getClass().getDeclaredMethod("setTint", int.class);
                                 method.setAccessible(true);
-                                method.invoke(view, baseColor(isNight(view), palette));
+                                method.invoke(view, materialTint(opacity));
                             } catch (Throwable ignored) {
-                                // The draw-pass palette wash is the fallback.
+                                // The draw-pass optical sheen is the fallback.
                             }
                         }
                         view.invalidate();
@@ -103,7 +101,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": v0.16 Samsung native glass renderer");
+        XposedBridge.log(TAG + ": v0.17 Samsung native glass renderer");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -133,7 +131,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
                         if (!shouldStyle(view)) return;
-                        int base = baseColor(isNight(view), palette);
+                        int base = materialTint(opacity);
                         // IMPORTANT: apply opacity only once. Older releases made both
                         // the tint and the drawable translucent, multiplying alpha.
                         // For Samsung's native mBackground, keep the tint fully opaque
@@ -142,17 +140,17 @@ public final class MainHook implements IXposedHookLoadPackage {
                         // composited at the selected alpha in the onDraw hook,
                         // preventing multiple independent alpha multiplications.
                         p.args[0] = base;
-                        int signature = (palette << 16) | (opacity << 8) | radiusDp;
+                        int signature = (opacity << 8) | radiusDp;
                         if (signature != lastLoggedSignature) {
                             lastLoggedSignature = signature;
-                            XposedBridge.log(TAG + ": applied configuration palette=" + palette
-                                    + " opacity=" + opacity + " radiusDp=" + radiusDp
+                            XposedBridge.log(TAG + ": applied clear-glass configuration opacity=" + opacity
+                                    + " radiusDp=" + radiusDp
                                     + " tint=0x" + Integer.toHexString((Integer) p.args[0]));
                         }
                         view.invalidate();
                         if (!loggedTint) {
                             loggedTint = true;
-                            XposedBridge.log(TAG + ": palette/opacity hook active");
+                            XposedBridge.log(TAG + ": clear-glass tint hook active");
                         }
                     } catch (Throwable t) { XposedBridge.log(TAG + ": tint failure " + t); }
                 }
@@ -169,11 +167,11 @@ public final class MainHook implements IXposedHookLoadPackage {
                         View view = (View) p.thisObject;
                         watch(view);
                         boolean active = shouldStyle(view);
-                        // Dimmed views also need the matching palette, but two
-                        // simultaneous background blurs create ghost outlines.
+                        // Dimmed backgrounds get the same clear material, but
+                        // no second overlapping blur surface.
                         int effectiveBlur = isDimmed(view) ? 0 : blurPx;
                         GlassRenderer.beforeDraw(view, (Canvas) p.args[0], active,
-                                opacity, effectiveBlur, dp(view, radiusDp), palette);
+                                opacity, effectiveBlur, dp(view, radiusDp));
                     } catch (Throwable t) {
                         XposedBridge.log(TAG + ": glass beforeDraw failure " + t);
                     }
@@ -185,18 +183,18 @@ public final class MainHook implements IXposedHookLoadPackage {
                         View view = (View) p.thisObject;
                         boolean active = shouldStyle(view);
                         GlassRenderer.afterDraw(view, (Canvas) p.args[0],
-                                active, dp(view, radiusDp), palette,
+                                active, dp(view, radiusDp),
                                 isDimmed(view), opacity, liquidStrength);
                     } catch (Throwable t) {
                         XposedBridge.log(TAG + ": glass afterDraw failure " + t);
                     }
                 }
             });
-            XposedBridge.log(TAG + ": v0.16 glass draw hooks registered");
+            XposedBridge.log(TAG + ": v0.17 glass draw hooks registered");
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": glass draw hook registration failed " + t);
         }
-        XposedBridge.log(TAG + ": v0.16 hooks registered");
+        XposedBridge.log(TAG + ": v0.17 hooks registered");
     }
 
     private static boolean isDimmed(View view) {
@@ -218,22 +216,17 @@ public final class MainHook implements IXposedHookLoadPackage {
         }
     }
 
-    private static int baseColor(boolean night, int selected) {
-        switch (selected) {
-            case 1: return night ? 0xFFC2CBD9 : 0xFFE4E9F1; // pale graphite
-            case 2: return night ? 0xFFCEB7EC : 0xFFEFDAFF; // pearl violet
-            default: return night ? 0xFFBADDF9 : 0xFFE5F5FF; // clear sky blue
-        }
+    // One consistent pale-blue material. The alpha of Samsung's tint is
+    // deliberately low because the native background is also composited
+    // at the user's selected alpha in GlassRenderer.
+    private static int materialTint(int opacity) {
+        return Color.argb(Math.max(18, Math.min(150, opacity / 2)),
+                211, 235, 252);
     }
 
     private static float dp(View v, float value) {
         return TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, value,
                 v.getResources().getDisplayMetrics());
-    }
-
-    private static boolean isNight(View v) {
-        return (v.getResources().getConfiguration().uiMode
-                & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
     }
 
     private static int readInt(Context c, String key, int fallback, int min, int max) {
@@ -251,16 +244,15 @@ public final class MainHook implements IXposedHookLoadPackage {
                         enabled = readInt(context, "liquidnotify_enabled", 1, 0, 1) == 1;
                         radiusEnabled = readInt(context, "liquidnotify_radius_enabled", 1, 0, 1) == 1;
                         radiusDp = readInt(context, "liquidnotify_radius_dp", 44, 18, 48);
-                        opacity = readInt(context, "liquidnotify_opacity", 104, 35, 245);
-                        palette = readInt(context, "liquidnotify_palette", 0, 0, 2);
-                        blurPx = readInt(context, "liquidnotify_blur_px", 28, 0, 80);
-                        liquidStrength = readInt(context, "liquidnotify_liquid_strength", 86, 0, 100);
+                        opacity = readInt(context, "liquidnotify_opacity", 76, 35, 245);
+                        blurPx = readInt(context, "liquidnotify_blur_px", 22, 0, 80);
+                        liquidStrength = readInt(context, "liquidnotify_liquid_strength", 90, 0, 100);
                         if (lastConfigLog < 0 || now - lastConfigLog > 30000L) {
                             lastConfigLog = now;
                             XposedBridge.log(TAG + ": SystemUI reads settings enabled=" + enabled
                                     + " radius=" + radiusEnabled
                                     + " radiusDp=" + radiusDp + " opacity=" + opacity
-                                    + " palette=" + palette + " blurPx=" + blurPx
+                                    + " blurPx=" + blurPx
                                     + " liquid=" + liquidStrength);
                         }
                     } catch (Throwable t) {

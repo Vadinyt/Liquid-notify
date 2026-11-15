@@ -1,4 +1,4 @@
-# LiquidNotify v0.16.0: Clear Liquid Glass reference
+# LiquidNotify v0.17.0: Single transparent liquid material
 
 LiquidNotify modifies Samsung's existing notification background views in `com.android.systemui`. It does not replace the notification center or intercept notifications, gestures, expansion, or dismissal.
 
@@ -96,3 +96,11 @@ Target: the user-supplied iOS-style light-blue translucent notification (15 Nov 
 - Real wallpaper-pixel refraction remains unimplemented; this is an optical simulation using native Samsung backgrounds. On a dark wallpaper, the result must still be darker than the bright-sky reference because no wallpaper pixel sampling is performed.
 
 Please compare compact and expanded notifications, palette switching and low versus high opacity, and verify root. The signed GitHub Actions APK is intended to install over the previous release.
+
+## v0.17: Remove palettes and make glass substantially more transparent
+
+The Color Palette controls have been removed completely from the app and runtime. Previous `liquidnotify_palette` values are ignored and no new palette keys are saved. A single neutral ice-clear material is applied to all notifications.
+
+The OEM card tint now uses a deliberately low alpha **in addition** to the user-selected full-background alpha layer. This specifically reduces the heavy blue-gray fill seen in v0.16. A pale glint replaces the extra full-card colored wash. Native Samsung blur tint is also reduced to a near-transparent level, while the optical rim and reflection remain bright. Opacity is now expected to visibly affect the card surface, but brightness and colors still depend on Samsung's already-dimmed shade background.
+
+**New preset:** opacity 76/255, blur 22 px, liquid reflections 90/100, corner radius 44 dp. No palette selection. True framebuffer pixel refraction is not implemented.

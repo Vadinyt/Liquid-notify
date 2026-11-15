@@ -62,13 +62,12 @@ final class GlassRenderer {
         int lastRectLeft = Integer.MIN_VALUE;
         int lastRectTop = Integer.MIN_VALUE;
         float lastCorner = -1f;
-        int lastPalette = -1;
         boolean lastDimmed;
-        final Paint paletteFill = new Paint(Paint.ANTI_ALIAS_FLAG);
+        final Paint surfaceSheen = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Path shape = new Path();
 
         State() {
-            paletteFill.setStyle(Paint.Style.FILL);
+            surfaceSheen.setStyle(Paint.Style.FILL);
         }
     }
 
@@ -126,7 +125,7 @@ final class GlassRenderer {
     }
 
     static void beforeDraw(View view, Canvas canvas, boolean active, int opacity,
-                           int blurRadiusPx, float cornerRadiusPx, int palette) {
+                           int blurRadiusPx, float cornerRadiusPx) {
         State value = state(view);
         Drawable background = background(view);
 
@@ -154,7 +153,10 @@ final class GlassRenderer {
         }
 
         blurRadiusPx = Math.max(0, Math.min(80, blurRadiusPx));
-        int nativeTint = glassColor(palette, Math.round(opacity * 0.36f));
+        // Keep the native blur clear instead of adding another opaque blue
+        // layer on top of Samsung's already-dimmed notification shade.
+        int nativeTint = Color.argb(Math.max(0, Math.min(20, opacity / 10)),
+                215, 238, 253);
         // SemBlurInfo blurs the whole render node, while Samsung can draw a
         // smaller card inside it. Those bounds diverge during expansion and
         // shade transitions, producing square cutoffs/ghost crescents.
@@ -207,7 +209,7 @@ final class GlassRenderer {
     }
 
     static void afterDraw(View view, Canvas canvas, boolean active,
-                          float cornerRadiusPx, int palette, boolean dimmed,
+                          float cornerRadiusPx, boolean dimmed,
                           int opacity, int liquidStrength) {
         State drawState = state(view);
         // Restore the opacity-controlled layer *before* drawing the subtle
@@ -255,55 +257,35 @@ final class GlassRenderer {
         // whenever Samsung native blur is running.
         if (value.lastRectW != bounds.width() || value.lastRectH != bounds.height()
                 || value.lastRectLeft != bounds.left || value.lastRectTop != bounds.top
-                || value.lastCorner != corner || value.lastPalette != palette
-                || value.lastDimmed != dimmed) {
+                || value.lastCorner != corner || value.lastDimmed != dimmed) {
             value.lastRectW = bounds.width();
             value.lastRectH = bounds.height();
             value.lastRectLeft = bounds.left;
             value.lastRectTop = bounds.top;
             value.lastCorner = corner;
-            value.lastPalette = palette;
             value.lastDimmed = dimmed;
             value.shape.reset();
             value.shape.addRoundRect(left, top, right, bottom, corner, corner,
                     Path.Direction.CW);
-            // Guaranteed live palette at every native background draw, even
-            // when Samsung resets setTint during row rebinds/transitions.
-            // It is an in-bounds translucent color wash, not a separate View.
-            int topTint;
-            int bottomTint;
-            switch (palette) {
-                case 1: // graphite
-                    topTint = dimmed ? 0x26C3CFDB : 0x7CDDE6F1;
-                    bottomTint = dimmed ? 0x16ADB9C9 : 0x39BCCAD9;
-                    break;
-                case 2: // violet
-                    topTint = dimmed ? 0x24D8BBF3 : 0x7DE6CEFA;
-                    bottomTint = dimmed ? 0x16BEA4E2 : 0x3EBEABEF;
-                    break;
-                default: // icy blue
-                    topTint = dimmed ? 0x26B8E0FF : 0x88DEEEFF;
-                    bottomTint = dimmed ? 0x1688BCE8 : 0x43A9D8FF;
-                    break;
-            }
-            value.paletteFill.setShader(new LinearGradient(
-                    left, top, right, bottom,
-                    topTint, bottomTint, Shader.TileMode.CLAMP));
+            // A nearly transparent neutral glass glint. No user palette,
+            // no extra solid colored fill.
+            value.surfaceSheen.setShader(new LinearGradient(
+                    left, top, left, bottom,
+                    0x24FFFFFF, 0x03D1ECFF, Shader.TileMode.CLAMP));
         }
-        // Retain only a subtle translucent base color. LiquidOptics draws
-        // beveled lens edges, spectral highlights and finite moving glints.
-        // Unlike a permanent frosted overlay, these effects establish depth
-        // without covering Samsung's notification content.
-        value.paletteFill.setAlpha(dimmed ? Math.round(opacity * .30f)
-                : Math.round(opacity * .85f));
+        // Suppress the old full-card palette wash. It was responsible for
+        // the opaque blue-gray material even at low opacity settings.
+        // Only the top sheen remains; the wallpaper should show through.
+        value.surfaceSheen.setAlpha(dimmed ? Math.round(opacity * .35f)
+                : Math.round(opacity * .72f));
         int save = canvas.save();
         canvas.clipPath(value.shape);
         canvas.drawRoundRect(left, top, right, bottom, corner, corner,
-                value.paletteFill);
+                value.surfaceSheen);
         canvas.restoreToCount(save);
         if (!dimmed && liquidStrength > 0) {
             LiquidOptics.draw(view, canvas, bounds, cornerRadiusPx,
-                    liquidStrength, opacity, palette);
+                    liquidStrength, opacity);
         }
     }
 
@@ -339,16 +321,6 @@ final class GlassRenderer {
                 && Math.abs(bounds.top) <= 2
                 && Math.abs(bounds.right - width) <= 2
                 && Math.abs(bounds.bottom - height) <= 2;
-    }
-
-    private static int glassColor(int palette, int alpha) {
-        int red, green, blue;
-        switch (palette) {
-            case 1: red = 205; green = 215; blue = 229; break;
-            case 2: red = 221; green = 190; blue = 242; break;
-            default: red = 204; green = 230; blue = 252; break;
-        }
-        return Color.argb(Math.max(0, Math.min(255, alpha)), red, green, blue);
     }
 
     private static synchronized boolean ensureBlurApi() {

@@ -8,8 +8,6 @@ import android.view.View;
 import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.LinearLayout;
-import android.widget.RadioGroup;
-import android.widget.RadioButton;
 import android.widget.SeekBar;
 import android.widget.Switch;
 import android.widget.TextView;
@@ -27,11 +25,10 @@ public final class SettingsActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private LinearLayout root;
     private TextView status;
-    private int opacity = 104;
-    private int blurPx = 28;
-    private int liquidStrength = 86;
+    private int opacity = 76;
+    private int blurPx = 22;
+    private int liquidStrength = 90;
     private int radius = 44;
-    private int palette = 0;
     private boolean enabled = true;
     private volatile boolean loading = true;
 
@@ -132,25 +129,10 @@ public final class SettingsActivity extends Activity {
         }, () -> write("liquidnotify_radius_dp", radius)));
 
         spacer(20);
-        root.addView(label("Color palette", 18, Color.WHITE));
-        RadioGroup group = new RadioGroup(this);
-        String[] names = {"Icy blue", "Graphite", "Violet"};
-        for (int i = 0; i < names.length; i++) {
-            RadioButton radio = new RadioButton(this);
-            radio.setId(100 + i);
-            radio.setText(names[i]);
-            radio.setTextColor(Color.WHITE);
-            group.addView(radio);
-        }
-        group.check(100 + palette);
-        root.addView(group);
-        group.setOnCheckedChangeListener((g, id) -> {
-            palette = Math.max(0, Math.min(2, id - 100));
-            write("liquidnotify_palette", palette);
-        });
-
-        spacer(18);
-        root.addView(label("Clear Liquid Glass: reflections 86, opacity 104, blur 28.",
+        root.addView(label("One clear Liquid Glass material. No color palettes.", 13,
+                0xFFA7B5CA));
+        spacer(12);
+        root.addView(label("Clear Liquid Glass: reflections 90, opacity 76, blur 22.",
                 13, 0xFFA7B5CA));
         spacer(12);
         status = label("Changes apply when notifications redraw.", 13, 0xFFA7B5CA);
@@ -164,20 +146,19 @@ public final class SettingsActivity extends Activity {
             status.setText("Applying Liquid Glass...");
             worker.execute(() -> {
                 boolean ok = hasRoot()
-                        && runRoot("settings put global liquidnotify_opacity 104")
-                        && runRoot("settings put global liquidnotify_blur_px 28")
-                        && runRoot("settings put global liquidnotify_liquid_strength 86")
+                        && runRoot("settings put global liquidnotify_opacity 76")
+                        && runRoot("settings put global liquidnotify_blur_px 22")
+                        && runRoot("settings put global liquidnotify_liquid_strength 90")
                         && runRoot("settings put global liquidnotify_radius_dp 44")
-                        && runRoot("settings put global liquidnotify_palette 0")
-                        && readRoot("liquidnotify_opacity", -1) == 104
-                        && readRoot("liquidnotify_blur_px", -1) == 28
-                        && readRoot("liquidnotify_liquid_strength", -1) == 86
+                        && readRoot("liquidnotify_opacity", -1) == 76
+                        && readRoot("liquidnotify_blur_px", -1) == 22
+                        && readRoot("liquidnotify_liquid_strength", -1) == 90
                         && readRoot("liquidnotify_radius_dp", -1) == 44
-                        && readRoot("liquidnotify_palette", -1) == 0;
+                        ;
                 runOnUiThread(() -> {
                     if (ok) {
                         load(toggle, alpha, alphaValue, blurBar, blurValue,
-                                liquidBar, liquidValue, corners, radiusValue, group);
+                                liquidBar, liquidValue, corners, radiusValue);
                     } else {
                         status.setText("Could not apply preset. Check KernelSU permission.");
                     }
@@ -198,8 +179,8 @@ public final class SettingsActivity extends Activity {
         Button refresh = new Button(this);
         refresh.setText("Reload saved values");
         root.addView(refresh);
-        refresh.setOnClickListener(v -> load(toggle, alpha, alphaValue, blurBar, blurValue, liquidBar, liquidValue, corners, radiusValue, group));
-        load(toggle, alpha, alphaValue, blurBar, blurValue, liquidBar, liquidValue, corners, radiusValue, group);
+        refresh.setOnClickListener(v -> load(toggle, alpha, alphaValue, blurBar, blurValue, liquidBar, liquidValue, corners, radiusValue));
+        load(toggle, alpha, alphaValue, blurBar, blurValue, liquidBar, liquidValue, corners, radiusValue);
     }
 
     private interface ValueUpdate { void update(int value); }
@@ -220,7 +201,7 @@ public final class SettingsActivity extends Activity {
                 && !key.equals("liquidnotify_blur_px")
                 && !key.equals("liquidnotify_liquid_strength")
                 && !key.equals("liquidnotify_radius_dp")
-                && !key.equals("liquidnotify_palette")) return;
+) return;
         if (loading) return;
         worker.execute(() -> {
             boolean ok = hasRoot() && runRoot("settings put global " + key + " " + value)
@@ -234,17 +215,16 @@ public final class SettingsActivity extends Activity {
     private void load(Switch toggle, SeekBar alpha, TextView alphaValue,
                       SeekBar blurBar, TextView blurValue,
                       SeekBar liquidBar, TextView liquidValue,
-                      SeekBar corners, TextView radiusValue, RadioGroup group) {
+                      SeekBar corners, TextView radiusValue) {
         loading = true;
         worker.execute(() -> {
             boolean rootGranted = hasRoot();
             int[] values = new int[] {
                 readRoot("liquidnotify_enabled", 1),
-                readRoot("liquidnotify_opacity", 104),
-                readRoot("liquidnotify_blur_px", 28),
-                readRoot("liquidnotify_liquid_strength", 86),
-                readRoot("liquidnotify_radius_dp", 44),
-                readRoot("liquidnotify_palette", 0)
+                readRoot("liquidnotify_opacity", 76),
+                readRoot("liquidnotify_blur_px", 22),
+                readRoot("liquidnotify_liquid_strength", 90),
+                readRoot("liquidnotify_radius_dp", 44)
             };
             runOnUiThread(() -> {
                 enabled = values[0] == 1;
@@ -252,10 +232,8 @@ public final class SettingsActivity extends Activity {
                 blurPx = Math.max(0, Math.min(80, values[2]));
                 liquidStrength = Math.max(0, Math.min(100, values[3]));
                 radius = Math.max(18, Math.min(48, values[4]));
-                palette = Math.max(0, Math.min(2, values[5]));
                 // Avoid issuing writes when initializing UI.
                 toggle.setOnCheckedChangeListener(null);
-                group.setOnCheckedChangeListener(null);
                 toggle.setChecked(enabled);
                 alpha.setProgress(opacity - 35);
                 alphaValue.setText(opacity + " / 255 (lower = more transparent)");
@@ -265,16 +243,11 @@ public final class SettingsActivity extends Activity {
                 liquidValue.setText(liquidStrength + " / 100 (0 = no highlights)");
                 corners.setProgress(radius - 18);
                 radiusValue.setText(radius + " dp");
-                group.check(100 + palette);
                 loading = false;
                 status.setText(rootGranted ? "Settings loaded. Adjust a control to save." : "Root unavailable. Grant LiquidNotify access in KernelSU.");
                 toggle.setOnCheckedChangeListener((button, checked) -> {
                     enabled = checked;
                     write("liquidnotify_enabled", checked ? 1 : 0);
-                });
-                group.setOnCheckedChangeListener((g, id) -> {
-                    palette = Math.max(0, Math.min(2, id - 100));
-                    write("liquidnotify_palette", palette);
                 });
             });
         });
