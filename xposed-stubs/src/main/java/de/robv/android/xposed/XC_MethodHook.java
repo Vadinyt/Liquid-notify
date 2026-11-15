@@ -6,4 +6,5 @@ public abstract class XC_MethodHook {
         public Object thisObject;
         public Object[] args;
     }
+    public final class Unhook {}
 }
