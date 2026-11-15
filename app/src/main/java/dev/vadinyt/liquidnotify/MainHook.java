@@ -24,6 +24,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static final String BACKGROUND =
             "com.android.systemui.statusbar.notification.row.NotificationBackgroundView";
     private static volatile long lastRead = -1;
+    private static volatile long lastConfigLog = -1;
     private static volatile boolean enabled = true;
     private static volatile boolean colorEnabled = true;
     private static volatile boolean radiusEnabled = true;
@@ -32,6 +33,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile int palette = 0;
     private static volatile boolean loggedRadius;
     private static volatile boolean loggedTint;
+    private static volatile int lastLoggedSignature = Integer.MIN_VALUE;
 
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
@@ -49,6 +51,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                         // Never shrink the OEM radius; keep Samsung's clipping semantics.
                         p.args[0] = Math.max(((Number) p.args[0]).floatValue(), radius);
                         p.args[1] = Math.max(((Number) p.args[1]).floatValue(), radius);
+                        view.invalidate();
                         if (!loggedRadius) {
                             loggedRadius = true;
                             XposedBridge.log(TAG + ": configurable radius hook active");
@@ -68,6 +71,14 @@ public final class MainHook implements IXposedHookLoadPackage {
                         int base = baseColor(isNight(view), palette);
                         p.args[0] = Color.argb(opacity, Color.red(base),
                                 Color.green(base), Color.blue(base));
+                        int signature = (palette << 16) | (opacity << 8) | radiusDp;
+                        if (signature != lastLoggedSignature) {
+                            lastLoggedSignature = signature;
+                            XposedBridge.log(TAG + ": applied configuration palette=" + palette
+                                    + " opacity=" + opacity + " radiusDp=" + radiusDp
+                                    + " tint=0x" + Integer.toHexString((Integer) p.args[0]));
+                        }
+                        view.invalidate();
                         if (!loggedTint) {
                             loggedTint = true;
                             XposedBridge.log(TAG + ": palette/opacity hook active");
@@ -115,6 +126,13 @@ public final class MainHook implements IXposedHookLoadPackage {
                         radiusDp = readInt(context, "liquidnotify_radius_dp", 36, 18, 48);
                         opacity = readInt(context, "liquidnotify_opacity", 185, 125, 245);
                         palette = readInt(context, "liquidnotify_palette", 0, 0, 2);
+                        if (lastConfigLog < 0 || now - lastConfigLog > 30000L) {
+                            lastConfigLog = now;
+                            XposedBridge.log(TAG + ": SystemUI reads settings enabled=" + enabled
+                                    + " color=" + colorEnabled + " radius=" + radiusEnabled
+                                    + " radiusDp=" + radiusDp + " opacity=" + opacity
+                                    + " palette=" + palette);
+                        }
                     } catch (Throwable t) {
                         enabled = false;
                         XposedBridge.log(TAG + ": config read failure " + t);
