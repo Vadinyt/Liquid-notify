@@ -2,7 +2,7 @@
 
 Native Samsung One UI 9 notification-shade customization research project for Galaxy S23+ (SM-S916B/DS), Android 17.
 
-**Status:** v0.17 experimental LSPosed module. GitHub Actions builds a signed APK; screenshots from the Galaxy S23+ on One UI 9 confirm visual changes. Native per-card blur and OEM background geometry require ongoing device testing.
+**Status:** v0.18 experimental LSPosed module. GitHub Actions builds a signed APK; screenshots from the Galaxy S23+ on One UI 9 confirm visual changes. Native per-card blur and OEM background geometry require ongoing device testing.
 
 The module targets `com.android.systemui` and must preserve Samsung notification delivery, privacy, actions and security indicators.
 
@@ -36,3 +36,8 @@ Based on the user's supplied clear iOS-style glass notification reference, the d
 ## v0.17 transparent liquid material
 
 Color palettes are removed; the UI and module now use one translucent ice-clear material. The previous heavy blue-gray fill is reduced using low-alpha OEM tint, a single composited background, and a restrained top sheen. Default values are opacity 76, blur 22, reflections 90, radius 44 dp. The Samsung native notification layout and controls are preserved. The notification shade's background dimming remains controlled by One UI.
+
+
+## v0.18 cleaner Liquid Glass
+
+One unified translucent pale-blue material replaces the older stacked gray Samsung background/extra sheen effect. Only a single optical border remains, with no extra corner streaks. All notification interactions remain native Samsung; no palette options. Behind-the-card content is still One UI's shade, not an independently refracted wallpaper image.

@@ -29,14 +29,10 @@ final class LiquidOptics {
     private static final class State {
         final Rect bounds = new Rect();
         final Path clip = new Path();
-        final Path topCurve = new Path();
-        final Path bottomCurve = new Path();
         final Paint glaze = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Paint rim = new Paint(Paint.ANTI_ALIAS_FLAG);
-        final Paint inner = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Paint leftGlow = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Paint rightGlow = new Paint(Paint.ANTI_ALIAS_FLAG);
-        final Paint curve = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Paint shimmer = new Paint(Paint.ANTI_ALIAS_FLAG);
         float radius = -1f;
         int intensity = -1;
@@ -45,11 +41,8 @@ final class LiquidOptics {
         State() {
             glaze.setStyle(Paint.Style.FILL);
             rim.setStyle(Paint.Style.STROKE);
-            inner.setStyle(Paint.Style.STROKE);
             leftGlow.setStyle(Paint.Style.FILL);
             rightGlow.setStyle(Paint.Style.FILL);
-            curve.setStyle(Paint.Style.STROKE);
-            curve.setStrokeCap(Paint.Cap.ROUND);
             shimmer.setStyle(Paint.Style.FILL);
         }
     }
@@ -65,7 +58,7 @@ final class LiquidOptics {
 
     static void draw(View view, Canvas canvas, Rect rect, float radiusPx,
                      int strength, int opacity) {
-        if (canvas == null || rect == null || rect.isEmpty() || strength <= 0
+        if (canvas == null || rect == null || rect.isEmpty()
                 || view.getVisibility() != View.VISIBLE
                 || rect.width() < 96 || rect.height() < 48) return;
 
@@ -91,29 +84,18 @@ final class LiquidOptics {
 
             st.clip.reset();
             st.clip.addRoundRect(l, t, r, b, rad, rad, Path.Direction.CW);
-            st.topCurve.reset();
-            st.topCurve.moveTo(l + rad * .16f, t + rad * .65f);
-            st.topCurve.cubicTo(l + rad * .17f, t + rad * .08f,
-                    l + rad * .48f, t, l + rad, t);
-            st.topCurve.lineTo(r - rad * .7f, t);
-            st.bottomCurve.reset();
-            st.bottomCurve.moveTo(l + rad * .55f, b);
-            st.bottomCurve.lineTo(r - rad, b);
-            st.bottomCurve.quadTo(r - rad * .13f, b, r, b - rad);
-
-            final int topTint = 0x52F4FBFF;
-            final int midTint = 0x12E3F6FF;
-            final int baseTint = 0x16EAF7FF;
+            // Transparent ice-blue surface: the actual color of the pane
+            // comes from this fill, rather than Samsung's dark gray drawable.
+            final int topTint = 0x9CF6FCFF;
+            final int midTint = 0x77D8F0FF;
+            final int baseTint = 0x62C6E5F9;
             st.glaze.setShader(new LinearGradient(l, t, l, b,
-                    new int[]{topTint, midTint, 0x04FFFFFF, baseTint},
-                    new float[]{0f, .28f, .78f, 1f},
+                    new int[]{topTint, midTint, 0x6DD1EBFF, baseTint},
+                    new float[]{0f, .30f, .72f, 1f},
                     Shader.TileMode.CLAMP));
             st.rim.setShader(new LinearGradient(l, t, r, b,
-                    new int[]{0xD1FFFFFF, 0x64CDEAFF, 0x20FFFFFF, 0xA4EDF8FF},
-                    new float[]{0f, .28f, .72f, 1f}, Shader.TileMode.CLAMP));
-            st.inner.setShader(new LinearGradient(l, t, r, b,
-                    new int[]{0x69FFFFFF, 0x0DFFFFFF, 0x4DFFFFFF},
-                    new float[]{0f, .56f, 1f}, Shader.TileMode.CLAMP));
+                    new int[]{0x96FFFFFF, 0x64E4F5FF, 0x09FFFFFF, 0x45F2F8FF},
+                    new float[]{0f, .25f, .72f, 1f}, Shader.TileMode.CLAMP));
             st.leftGlow.setShader(new RadialGradient(
                     l + rad * .72f, t + rad * .7f,
                     Math.max(rad * 1.45f, width * .23f),
@@ -126,17 +108,24 @@ final class LiquidOptics {
                     Math.max(rad * 1.4f, width * .25f),
                     rightSpectrum,
                     new float[]{0f, .40f, 1f}, Shader.TileMode.CLAMP));
-            st.curve.setShader(new LinearGradient(l, t, r, t,
-                    new int[]{0xE1FFFFFF, 0xA3FFFFFF, 0x00FFFFFF},
-                    new float[]{0f, .38f, 1f}, Shader.TileMode.CLAMP));
+
         }
 
         final int save = canvas.save();
         canvas.clipPath(st.clip);
         // A faint *bright* material glaze, rather than an opaque gray panel.
-        st.glaze.setAlpha(Math.round(Math.min(255f, (60f + opacity * .64f) * power)));
+        // A continuous glass pane, controlled independently by the opacity
+        // slider. At the default 76/255 it is visibly light but still shows
+        // the shade behind; higher values intentionally make it more opaque.
+        st.glaze.setAlpha(Math.max(32, Math.min(230,
+                Math.round(20f + opacity * .80f))));
         canvas.drawRoundRect(l, t, r, b, rad, rad, st.glaze);
 
+        // Reflections may be disabled without removing the glass surface.
+        if (strength <= 0) {
+            canvas.restoreToCount(save);
+            return;
+        }
         // Two soft halos establish depth but don't hide the wallpaper.
         st.leftGlow.setAlpha(Math.round(190f * power));
         canvas.drawRoundRect(l, t, r, b, rad, rad, st.leftGlow);
@@ -144,22 +133,13 @@ final class LiquidOptics {
         canvas.drawRoundRect(l, t, r, b, rad, rad, st.rightGlow);
 
         // A thin bright outside rim, inset so it cannot spill or form crescents.
-        st.rim.setStrokeWidth(Math.max(.65f, .90f * density));
-        st.rim.setAlpha(Math.round(216f * power));
+        st.rim.setStrokeWidth(Math.max(.5f, .66f * density));
+        st.rim.setAlpha(Math.round(176f * power));
         canvas.drawRoundRect(l, t, r, b, rad, rad, st.rim);
 
-        final float offset = Math.max(.6f, density * 1.2f);
-        final float innerRadius = Math.max(0f, rad - offset);
-        st.inner.setStrokeWidth(Math.max(.4f, density * .55f));
-        st.inner.setAlpha(Math.round(146f * power));
-        canvas.drawRoundRect(l + offset, t + offset, r - offset, b - offset,
-                innerRadius, innerRadius, st.inner);
-
-        st.curve.setStrokeWidth(Math.max(.9f, density * 1.12f));
-        st.curve.setAlpha(Math.round(196f * power));
-        canvas.drawPath(st.topCurve, st.curve);
-        st.curve.setAlpha(Math.round(70f * power));
-        canvas.drawPath(st.bottomCurve, st.curve);
+        // Single edge only. Earlier double rim and free-form corner arcs
+        // generated the metallic double border and stray corner scratches.
+        // The top-side light comes from the rim shader, not an extra stroke.
 
         long elapsed = SystemClock.uptimeMillis() - st.startTime;
         float animatorScale = 1f;

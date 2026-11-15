@@ -146,7 +146,11 @@ final class GlassRenderer {
         // the notification's text, icons or touch surfaces.
         if (canvas != null && view.getWidth() > 0 && view.getHeight() > 0
                 && value.layerSaveCount == -1) {
-            final int alpha = Math.max(35, Math.min(245, opacity));
+            // The OEM background is still a dark One UI surface. Keeping
+            // its full alpha beneath our clear tint recreated a gray panel.
+            // Retain a very faint OEM layer only for transition continuity.
+            final int alpha = Math.max(4, Math.min(82,
+                    Math.round(opacity * .23f)));
             value.layerSaveCount = canvas.saveLayerAlpha(
                     0f, 0f, view.getWidth(), view.getHeight(), alpha);
             value.savedLayerCanvas = canvas;
@@ -155,8 +159,9 @@ final class GlassRenderer {
         blurRadiusPx = Math.max(0, Math.min(80, blurRadiusPx));
         // Keep the native blur clear instead of adding another opaque blue
         // layer on top of Samsung's already-dimmed notification shade.
-        int nativeTint = Color.argb(Math.max(0, Math.min(20, opacity / 10)),
-                215, 238, 253);
+        // Native SemBlurInfo should blur the content beneath the card, not
+        // introduce a second tinted rectangular material.
+        int nativeTint = Color.TRANSPARENT;
         // SemBlurInfo blurs the whole render node, while Samsung can draw a
         // smaller card inside it. Those bounds diverge during expansion and
         // shade transitions, producing square cutoffs/ghost crescents.
@@ -273,16 +278,16 @@ final class GlassRenderer {
                     left, top, left, bottom,
                     0x24FFFFFF, 0x03D1ECFF, Shader.TileMode.CLAMP));
         }
-        // Suppress the old full-card palette wash. It was responsible for
-        // the opaque blue-gray material even at low opacity settings.
-        // Only the top sheen remains; the wallpaper should show through.
-        value.surfaceSheen.setAlpha(dimmed ? Math.round(opacity * .35f)
-                : Math.round(opacity * .72f));
-        int save = canvas.save();
-        canvas.clipPath(value.shape);
-        canvas.drawRoundRect(left, top, right, bottom, corner, corner,
-                value.surfaceSheen);
-        canvas.restoreToCount(save);
+        // A minimal dimmed-layer sheen. The one clear-material fill now
+        // lives in LiquidOptics, preventing stacked translucent panels.
+        value.surfaceSheen.setAlpha(dimmed ? Math.round(opacity * .20f) : 0);
+        if (dimmed) {
+            int save = canvas.save();
+            canvas.clipPath(value.shape);
+            canvas.drawRoundRect(left, top, right, bottom, corner, corner,
+                    value.surfaceSheen);
+            canvas.restoreToCount(save);
+        }
         if (!dimmed && liquidStrength > 0) {
             LiquidOptics.draw(view, canvas, bounds, cornerRadiusPx,
                     liquidStrength, opacity);

@@ -62,7 +62,7 @@ public final class SettingsActivity extends Activity {
         TextView title = label("LiquidNotify", 28, 0xFFFFFFFF);
         title.setTypeface(null, Typeface.BOLD);
         root.addView(title);
-        root.addView(label("One UI 9 • Clear Liquid Glass notifications", 13, 0xFFA7B5CA));
+        root.addView(label("One UI 9 • Transparent Liquid Glass", 13, 0xFFA7B5CA));
         spacer(20);
 
         Switch toggle = new Switch(this);

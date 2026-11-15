@@ -1,4 +1,4 @@
-# LiquidNotify v0.17.0: Single transparent liquid material
+# LiquidNotify v0.18.0: Single translucent glass pane
 
 LiquidNotify modifies Samsung's existing notification background views in `com.android.systemui`. It does not replace the notification center or intercept notifications, gestures, expansion, or dismissal.
 
@@ -104,3 +104,11 @@ The Color Palette controls have been removed completely from the app and runtime
 The OEM card tint now uses a deliberately low alpha **in addition** to the user-selected full-background alpha layer. This specifically reduces the heavy blue-gray fill seen in v0.16. A pale glint replaces the extra full-card colored wash. Native Samsung blur tint is also reduced to a near-transparent level, while the optical rim and reflection remain bright. Opacity is now expected to visibly affect the card surface, but brightness and colors still depend on Samsung's already-dimmed shade background.
 
 **New preset:** opacity 76/255, blur 22 px, liquid reflections 90/100, corner radius 44 dp. No palette selection. True framebuffer pixel refraction is not implemented.
+
+## v0.18 one-material composition and optical edge cleanup
+
+Testing v0.17 on the S23+ showed a conspicuous dark gray face and two metallic white borders, neither matching the reference iOS glass sample. v0.18 retains only 23% of the user-configured opacity for the original One UI background, eliminates the normal-view secondary sheen fill, sets the SemBlurInfo background tint to transparent and draws **one unified pale ice-blue translucent pane** underneath the existing Samsung notification text and icons. The opacity slider controls that surface separately from a very faint OEM layer.
+
+The LiquidOptics outer rim is now single and finer; the second interior outline and unconstrained upper/lower curved strokes are removed, preventing bright corner scratches. The color wash is deliberately brighter and smoothly distributed across the entire card rather than making the top appear opaque and the bottom dark. Motion remains a brief glint, no continuous redraw. Reflection intensity 0 disables reflections but keeps material visible.
+
+**Limit:** The actual background visible through the glass is the One UI notification shade, which is dark and dimmed on the user's wallpaper. This module does not capture or refract the wallpaper behind the shade. The reference image contains bright blue sky; the same surface over a dark backdrop will inevitably look darker. Avoid broad shade/scrim hooks because they can affect unrelated system UI and lockscreen rendering.
