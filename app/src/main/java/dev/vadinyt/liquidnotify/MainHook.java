@@ -3,6 +3,7 @@ package dev.vadinyt.liquidnotify;
 import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.res.Configuration;
+import android.graphics.Color;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.TypedValue;
@@ -14,28 +15,29 @@ import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 /**
- * v0.5 native notification glass styling for One UI 9.
- * Works on Samsung's existing notification background view. It does not replace
- * the shade, alter notification content, or intercept touch handling.
- *
- * Avoids external foreground overlays that extend beyond Samsung rounded backgrounds.
+ * LiquidNotify v0.6: configurable native card tint and shape.
+ * No replacement shade, touch interception, or fake backdrop blur.
+ * Settings.Global keys can be changed using an authorized adb/root shell.
  */
 public final class MainHook implements IXposedHookLoadPackage {
     private static final String TAG = "LiquidNotify";
     private static final String BACKGROUND =
             "com.android.systemui.statusbar.notification.row.NotificationBackgroundView";
-    private static final float RADIUS_DP = 34f;
-    private static volatile long lastRead;
+    private static volatile long lastRead = -1;
     private static volatile boolean enabled = true;
     private static volatile boolean safeMode;
     private static volatile boolean colorEnabled = true;
+    private static volatile boolean radiusEnabled = true;
+    private static volatile int radiusDp = 36;
+    private static volatile int opacity = 185;
+    private static volatile int palette = 0;
     private static volatile boolean loggedRadius;
     private static volatile boolean loggedTint;
 
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": v0.5 clipped native surfaces, main process only");
+        XposedBridge.log(TAG + ": v0.6 configurable native glass surfaces");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -43,13 +45,14 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        if (!shouldStyle(view)) return;
-                        float radius = dp(view, RADIUS_DP);
-                        p.args[0] = Math.max((Float) p.args[0], radius);
-                        p.args[1] = Math.max((Float) p.args[1], radius);
+                        if (!shouldStyle(view) || !radiusEnabled) return;
+                        float radius = dp(view, radiusDp);
+                        // Never shrink the OEM radius; keep Samsung's clipping semantics.
+                        p.args[0] = Math.max(((Number) p.args[0]).floatValue(), radius);
+                        p.args[1] = Math.max(((Number) p.args[1]).floatValue(), radius);
                         if (!loggedRadius) {
                             loggedRadius = true;
-                            XposedBridge.log(TAG + ": radius hook active");
+                            XposedBridge.log(TAG + ": configurable radius hook active");
                         }
                     } catch (Throwable t) { XposedBridge.log(TAG + ": radius failure " + t); }
                 }
@@ -62,21 +65,27 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        if (!shouldStyle(view)) return;
-                        if (colorEnabled) {
-                            boolean night = isNight(view);
-                            // Retain a dark readable base on the unlocked notification shade.
-                            p.args[0] = night ? 0xD92D354A : 0xD93B4B65;
-                        }
+                        if (!shouldStyle(view) || !colorEnabled) return;
+                        int base = baseColor(isNight(view), palette);
+                        p.args[0] = Color.argb(opacity, Color.red(base),
+                                Color.green(base), Color.blue(base));
                         if (!loggedTint) {
                             loggedTint = true;
-                            XposedBridge.log(TAG + ": adaptive tint hook active");
+                            XposedBridge.log(TAG + ": palette/opacity hook active");
                         }
                     } catch (Throwable t) { XposedBridge.log(TAG + ": tint failure " + t); }
                 }
             });
         } catch (Throwable t) { XposedBridge.log(TAG + ": tint registration failed " + t); }
-        XposedBridge.log(TAG + ": v0.5 hook registration complete");
+        XposedBridge.log(TAG + ": v0.6 hooks registered");
+    }
+
+    private static int baseColor(boolean night, int selected) {
+        switch (selected) {
+            case 1: return night ? 0xFF282B34 : 0xFF434852; // graphite
+            case 2: return night ? 0xFF302B45 : 0xFF55476D; // violet
+            default: return night ? 0xFF303A50 : 0xFF43546C; // icy blue
+        }
     }
 
     private static float dp(View v, float value) {
@@ -89,22 +98,32 @@ public final class MainHook implements IXposedHookLoadPackage {
                 & Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES;
     }
 
+    private static int readInt(Context c, String key, int fallback, int min, int max) {
+        int value = Settings.Global.getInt(c.getContentResolver(), key, fallback);
+        return Math.max(min, Math.min(max, value));
+    }
+
     private static boolean shouldStyle(View view) {
         Context context = view.getContext();
         long now = SystemClock.uptimeMillis();
-        if (now - lastRead >= 2000L) {
-            try {
-                enabled = Settings.Global.getInt(context.getContentResolver(),
-                        "liquidnotify_enabled", 1) == 1;
-                safeMode = Settings.Global.getInt(context.getContentResolver(),
-                        "liquidnotify_safe_mode", 0) == 1;
-                colorEnabled = Settings.Global.getInt(context.getContentResolver(),
-                        "liquidnotify_color", 1) == 1;
-            } catch (Throwable t) {
-                enabled = false;
-                XposedBridge.log(TAG + ": config read failed " + t);
+        if (lastRead < 0 || now - lastRead >= 1500L) {
+            synchronized (MainHook.class) {
+                if (lastRead < 0 || now - lastRead >= 1500L) {
+                    try {
+                        enabled = readInt(context, "liquidnotify_enabled", 1, 0, 1) == 1;
+                        safeMode = readInt(context, "liquidnotify_safe_mode", 0, 0, 1) == 1;
+                        colorEnabled = readInt(context, "liquidnotify_color", 1, 0, 1) == 1;
+                        radiusEnabled = readInt(context, "liquidnotify_radius_enabled", 1, 0, 1) == 1;
+                        radiusDp = readInt(context, "liquidnotify_radius_dp", 36, 18, 48);
+                        opacity = readInt(context, "liquidnotify_opacity", 185, 125, 245);
+                        palette = readInt(context, "liquidnotify_palette", 0, 0, 2);
+                    } catch (Throwable t) {
+                        enabled = false;
+                        XposedBridge.log(TAG + ": config read failure " + t);
+                    }
+                    lastRead = now;
+                }
             }
-            lastRead = now;
         }
         if (!enabled || safeMode) return false;
         try {
