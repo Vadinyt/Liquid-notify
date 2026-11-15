@@ -27,7 +27,8 @@ public final class SettingsActivity extends Activity {
     private LinearLayout root;
     private TextView status;
     private int opacity = 112;
-    private int blurPx = 54;
+    private int blurPx = 40;
+    private int liquidStrength = 80;
     private int radius = 36;
     private int palette = 0;
     private boolean enabled = true;
@@ -49,7 +50,7 @@ public final class SettingsActivity extends Activity {
         TextView title = label("LiquidNotify", 28, 0xFFFFFFFF);
         title.setTypeface(null, Typeface.BOLD);
         root.addView(title);
-        root.addView(label("One UI 9 • Samsung native glass experiment", 13, 0xFFA7B5CA));
+        root.addView(label("One UI 9 • Liquid Glass notification surfaces", 13, 0xFFA7B5CA));
         spacer(20);
 
         Switch toggle = new Switch(this);
@@ -77,7 +78,7 @@ public final class SettingsActivity extends Activity {
         }, () -> write("liquidnotify_opacity", opacity)));
 
         spacer(20);
-        root.addView(label("Native blur strength", 18, Color.WHITE));
+        root.addView(label("Backdrop blur (secondary)", 18, Color.WHITE));
         TextView blurValue = label(blurPx + " px", 13, 0xFFA7B5CA);
         root.addView(blurValue);
         SeekBar blurBar = new SeekBar(this);
@@ -88,6 +89,19 @@ public final class SettingsActivity extends Activity {
             blurPx = value;
             blurValue.setText(blurPx + " px (0 = off)");
         }, () -> write("liquidnotify_blur_px", blurPx)));
+
+        spacer(20);
+        root.addView(label("Liquid reflections", 18, Color.WHITE));
+        TextView liquidValue = label(liquidStrength + " / 100", 13, 0xFFA7B5CA);
+        root.addView(liquidValue);
+        SeekBar liquidBar = new SeekBar(this);
+        liquidBar.setMax(100);
+        liquidBar.setProgress(liquidStrength);
+        root.addView(liquidBar);
+        liquidBar.setOnSeekBarChangeListener(seekListener(value -> {
+            liquidStrength = value;
+            liquidValue.setText(liquidStrength + " / 100 (0 = no highlights)");
+        }, () -> write("liquidnotify_liquid_strength", liquidStrength)));
 
         spacer(20);
         root.addView(label("Corner radius", 18, Color.WHITE));
@@ -121,30 +135,32 @@ public final class SettingsActivity extends Activity {
         });
 
         spacer(18);
-        root.addView(label("Recommended: opacity 100–130 and blur 40–65 px.",
+        root.addView(label("Liquid Glass: reflections 80, opacity 85, blur 40.",
                 13, 0xFFA7B5CA));
         spacer(12);
         status = label("Changes apply when notifications redraw.", 13, 0xFFA7B5CA);
         root.addView(status);
         spacer(12);
         Button frosted = new Button(this);
-        frosted.setText("APPLY FROSTED GLASS PRESET");
+        frosted.setText("APPLY LIQUID GLASS");
         root.addView(frosted);
         frosted.setOnClickListener(v -> {
             if (loading) return;
-            status.setText("Applying frosted glass preset...");
+            status.setText("Applying Liquid Glass...");
             worker.execute(() -> {
                 boolean ok = hasRoot()
-                        && runRoot("settings put global liquidnotify_opacity 112")
-                        && runRoot("settings put global liquidnotify_blur_px 54")
-                        && runRoot("settings put global liquidnotify_radius_dp 38")
-                        && readRoot("liquidnotify_opacity", -1) == 112
-                        && readRoot("liquidnotify_blur_px", -1) == 54
-                        && readRoot("liquidnotify_radius_dp", -1) == 38;
+                        && runRoot("settings put global liquidnotify_opacity 85")
+                        && runRoot("settings put global liquidnotify_blur_px 40")
+                        && runRoot("settings put global liquidnotify_liquid_strength 80")
+                        && runRoot("settings put global liquidnotify_radius_dp 44")
+                        && readRoot("liquidnotify_opacity", -1) == 85
+                        && readRoot("liquidnotify_blur_px", -1) == 40
+                        && readRoot("liquidnotify_liquid_strength", -1) == 80
+                        && readRoot("liquidnotify_radius_dp", -1) == 44;
                 runOnUiThread(() -> {
                     if (ok) {
                         load(toggle, alpha, alphaValue, blurBar, blurValue,
-                                corners, radiusValue, group);
+                                liquidBar, liquidValue, corners, radiusValue, group);
                     } else {
                         status.setText("Could not apply preset. Check KernelSU permission.");
                     }
@@ -165,8 +181,8 @@ public final class SettingsActivity extends Activity {
         Button refresh = new Button(this);
         refresh.setText("Reload saved values");
         root.addView(refresh);
-        refresh.setOnClickListener(v -> load(toggle, alpha, alphaValue, blurBar, blurValue, corners, radiusValue, group));
-        load(toggle, alpha, alphaValue, blurBar, blurValue, corners, radiusValue, group);
+        refresh.setOnClickListener(v -> load(toggle, alpha, alphaValue, blurBar, blurValue, liquidBar, liquidValue, corners, radiusValue, group));
+        load(toggle, alpha, alphaValue, blurBar, blurValue, liquidBar, liquidValue, corners, radiusValue, group);
     }
 
     private interface ValueUpdate { void update(int value); }
@@ -185,6 +201,7 @@ public final class SettingsActivity extends Activity {
         if (!key.equals("liquidnotify_enabled")
                 && !key.equals("liquidnotify_opacity")
                 && !key.equals("liquidnotify_blur_px")
+                && !key.equals("liquidnotify_liquid_strength")
                 && !key.equals("liquidnotify_radius_dp")
                 && !key.equals("liquidnotify_palette")) return;
         if (loading) return;
@@ -199,23 +216,26 @@ public final class SettingsActivity extends Activity {
 
     private void load(Switch toggle, SeekBar alpha, TextView alphaValue,
                       SeekBar blurBar, TextView blurValue,
+                      SeekBar liquidBar, TextView liquidValue,
                       SeekBar corners, TextView radiusValue, RadioGroup group) {
         loading = true;
         worker.execute(() -> {
             boolean rootGranted = hasRoot();
             int[] values = new int[] {
                 readRoot("liquidnotify_enabled", 1),
-                readRoot("liquidnotify_opacity", 112),
-                readRoot("liquidnotify_blur_px", 54),
-                readRoot("liquidnotify_radius_dp", 36),
+                readRoot("liquidnotify_opacity", 85),
+                readRoot("liquidnotify_blur_px", 40),
+                readRoot("liquidnotify_liquid_strength", 80),
+                readRoot("liquidnotify_radius_dp", 44),
                 readRoot("liquidnotify_palette", 0)
             };
             runOnUiThread(() -> {
                 enabled = values[0] == 1;
                 opacity = Math.max(35, Math.min(245, values[1]));
                 blurPx = Math.max(0, Math.min(80, values[2]));
-                radius = Math.max(18, Math.min(48, values[3]));
-                palette = Math.max(0, Math.min(2, values[4]));
+                liquidStrength = Math.max(0, Math.min(100, values[3]));
+                radius = Math.max(18, Math.min(48, values[4]));
+                palette = Math.max(0, Math.min(2, values[5]));
                 // Avoid issuing writes when initializing UI.
                 toggle.setOnCheckedChangeListener(null);
                 group.setOnCheckedChangeListener(null);
@@ -224,6 +244,8 @@ public final class SettingsActivity extends Activity {
                 alphaValue.setText(opacity + " / 255 (lower = more transparent)");
                 blurBar.setProgress(blurPx);
                 blurValue.setText(blurPx + " px (0 = off)");
+                liquidBar.setProgress(liquidStrength);
+                liquidValue.setText(liquidStrength + " / 100 (0 = no highlights)");
                 corners.setProgress(radius - 18);
                 radiusValue.setText(radius + " dp");
                 group.check(100 + palette);

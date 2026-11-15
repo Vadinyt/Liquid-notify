@@ -1,4 +1,4 @@
-# LiquidNotify v0.14.0: Stable notification geometry
+# LiquidNotify v0.15.0: Liquid Glass optical surfaces
 
 LiquidNotify modifies Samsung's existing notification background views in `com.android.systemui`. It does not replace the notification center or intercept notifications, gestures, expansion, or dismissal.
 
@@ -11,9 +11,10 @@ Open the LiquidNotify launcher application and allow root in KernelSU. Values ar
 | Setting | Internal key | Range | Default |
 | --- | --- | --- | --- |
 | Enable styling | `liquidnotify_enabled` | 0 or 1 | 1 |
-| Card opacity | `liquidnotify_opacity` | 35–245 (higher is more opaque) | 105 |
-| Native blur strength | `liquidnotify_blur_px` | 0–80 pixels, 0 disables blur | 64 |
-| Card radius | `liquidnotify_radius_dp` | 18–48 dp | 36 |
+| Card opacity | `liquidnotify_opacity` | 35–245 (higher is more opaque) | 85 |
+| Backdrop blur (secondary) | `liquidnotify_blur_px` | 0–80 pixels, 0 disables blur | 40 |
+| Card radius | `liquidnotify_radius_dp` | 18–48 dp | 44 |
+| Liquid reflection intensity | `liquidnotify_liquid_strength` | 0–100 (0 disables optical effects) | 80 |
 | Color palette | `liquidnotify_palette` | 0 icy blue / 1 graphite / 2 violet | 0 |
 
 Legacy expert toggles `liquidnotify_color` and `liquidnotify_radius_enabled` remain available as 0/1 values.
@@ -75,3 +76,11 @@ Samsung's NotificationBackgroundView changes mActualHeight and its drawable boun
 This version removes the custom View outline entirely. Native SemBlurInfo blur is only applied when the OEM background drawable fills the measured View with no clip top/bottom and no expansion animation. When the bounds disagree, it removes native blur and lets Samsung render the row normally, keeping the tint and opacity effects. Decorative highlight painting is also skipped on transient mismatched geometry. No other applications or keyboard hooks are changed.
 
 **Trade-off:** Individual native blur is intentionally absent during some expanded or clipped notification states, because these cannot be safely rounded independently with the current OEM API. Future changes should use device-specific SystemUI class evidence rather than applying an extra global outline.
+
+## v0.15: Liquid Glass, not Frosted Glass
+
+LiquidNotify now draws **liquid optical effects** inside each Samsung notification card: a curved bright rim, a secondary inner lens edge, subtle cyan/violet dispersion, diagonal reflected light, and a short specular shimmer when a card first appears or the reflection strength changes. The movement runs for 720 ms only and respects Android's animation-duration setting. No permanent redraw loop or replacement notification UI.
+
+The prior Frosted Glass preset is replaced by **APPLY LIQUID GLASS**, using opacity 85, Samsung blur 40 px, 44 dp radius and reflection intensity 80/100. The blur remains a secondary supporting effect. The app and root settings now expose `liquidnotify_liquid_strength` (0–100).
+
+**Rendering limitation:** This is a lensing *simulation*, not true optical refraction of the wallpaper; that would require sampling the background using an OEM GPU shader. Native content, text, notification actions, and animations remain Samsung-owned. Some nonstandard, clipped OEM states still omit additional optical effects to preserve correct geometry.

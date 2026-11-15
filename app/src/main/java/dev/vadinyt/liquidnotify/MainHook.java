@@ -36,7 +36,8 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile int radiusDp = 36;
     private static volatile int opacity = 185;
     private static volatile int palette = 0;
-    private static volatile int blurPx = 64;
+    private static volatile int blurPx = 40;
+    private static volatile int liquidStrength = 80;
     private static volatile boolean loggedRadius;
     private static volatile boolean loggedTint;
     private static volatile int lastLoggedSignature = Integer.MIN_VALUE;
@@ -57,7 +58,8 @@ public final class MainHook implements IXposedHookLoadPackage {
                     }
                 };
                 String[] names = {"liquidnotify_enabled", "liquidnotify_opacity",
-                        "liquidnotify_palette", "liquidnotify_radius_dp", "liquidnotify_blur_px"};
+                        "liquidnotify_palette", "liquidnotify_radius_dp", "liquidnotify_blur_px",
+                        "liquidnotify_liquid_strength"};
                 for (String name : names) {
                     view.getContext().getContentResolver().registerContentObserver(
                             Settings.Global.getUriFor(name), false, observer);
@@ -87,7 +89,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": v0.14 Samsung native glass renderer");
+        XposedBridge.log(TAG + ": v0.15 Samsung native glass renderer");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -170,17 +172,17 @@ public final class MainHook implements IXposedHookLoadPackage {
                         boolean active = shouldStyle(view);
                         GlassRenderer.afterDraw(view, (Canvas) p.args[0],
                                 active, dp(view, radiusDp), palette,
-                                isDimmed(view), opacity);
+                                isDimmed(view), opacity, liquidStrength);
                     } catch (Throwable t) {
                         XposedBridge.log(TAG + ": glass afterDraw failure " + t);
                     }
                 }
             });
-            XposedBridge.log(TAG + ": v0.14 glass draw hooks registered");
+            XposedBridge.log(TAG + ": v0.15 glass draw hooks registered");
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": glass draw hook registration failed " + t);
         }
-        XposedBridge.log(TAG + ": v0.14 hooks registered");
+        XposedBridge.log(TAG + ": v0.15 hooks registered");
     }
 
     private static boolean isDimmed(View view) {
@@ -237,13 +239,15 @@ public final class MainHook implements IXposedHookLoadPackage {
                         radiusDp = readInt(context, "liquidnotify_radius_dp", 36, 18, 48);
                         opacity = readInt(context, "liquidnotify_opacity", 185, 35, 245);
                         palette = readInt(context, "liquidnotify_palette", 0, 0, 2);
-                        blurPx = readInt(context, "liquidnotify_blur_px", 64, 0, 80);
+                        blurPx = readInt(context, "liquidnotify_blur_px", 40, 0, 80);
+                        liquidStrength = readInt(context, "liquidnotify_liquid_strength", 80, 0, 100);
                         if (lastConfigLog < 0 || now - lastConfigLog > 30000L) {
                             lastConfigLog = now;
                             XposedBridge.log(TAG + ": SystemUI reads settings enabled=" + enabled
                                     + " radius=" + radiusEnabled
                                     + " radiusDp=" + radiusDp + " opacity=" + opacity
-                                    + " palette=" + palette + " blurPx=" + blurPx);
+                                    + " palette=" + palette + " blurPx=" + blurPx
+                                    + " liquid=" + liquidStrength);
                         }
                     } catch (Throwable t) {
                         enabled = false;

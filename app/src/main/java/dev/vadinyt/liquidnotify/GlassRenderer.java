@@ -19,7 +19,7 @@ import java.util.WeakHashMap;
 import de.robv.android.xposed.XposedBridge;
 
 /**
- * Draws glass directly on Samsung's existing notification background view.
+ * Draws a restrained translucent base directly on Samsung's notification background view.
  * There is no foreground overlay, replacement content view, or new window.
  *
  * Samsung SemBlurInfo is an OEM API, so it is resolved and invoked reflectively.
@@ -44,7 +44,6 @@ final class GlassRenderer {
     private static Method apply;
     private static boolean loggedNative;
     private static boolean loggedMissing;
-    private static boolean loggedDrawable;
 
     private static final class State {
         boolean blurApplied;
@@ -67,12 +66,8 @@ final class GlassRenderer {
         boolean lastDimmed;
         final Paint paletteFill = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Path shape = new Path();
-        final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
-        final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
 
         State() {
-            sheen.setStyle(Paint.Style.FILL);
-            border.setStyle(Paint.Style.STROKE);
             paletteFill.setStyle(Paint.Style.FILL);
         }
     }
@@ -213,7 +208,7 @@ final class GlassRenderer {
 
     static void afterDraw(View view, Canvas canvas, boolean active,
                           float cornerRadiusPx, int palette, boolean dimmed,
-                          int opacity) {
+                          int opacity, int liquidStrength) {
         State drawState = state(view);
         // Restore the opacity-controlled layer *before* drawing the subtle
         // color wash and sheen. Everything drawn inside onDraw by Samsung is
@@ -239,9 +234,13 @@ final class GlassRenderer {
             // NotificationBackgroundView.onDraw(). Revisit once afterward.
             view.postInvalidate();
         }
-        // Keep decorative glass highlights off transient/clipped row shapes;
-        // OEM drawing still handles their native tint, alpha and animations.
-        if (!eligible) return;
+        // Refraction-like highlights can use the clipped drawable region even
+        // when Samsung native blur cannot safely match this View's geometry.
+        // Don't draw optical glints while the OEM expand animation is running.
+        if (!eligible && readBoolField(view, expandingField)) return;
+        if (bounds.left < -2 || bounds.top < -2
+                || bounds.right > view.getWidth() + 2
+                || bounds.bottom > view.getHeight() + 2) return;
         float edge = Math.max(1f, view.getResources().getDisplayMetrics().density * 0.9f);
         float left = bounds.left + edge;
         float top = bounds.top + edge;
@@ -290,37 +289,22 @@ final class GlassRenderer {
             value.paletteFill.setShader(new LinearGradient(
                     left, top, right, bottom,
                     topTint, bottomTint, Shader.TileMode.CLAMP));
-            value.sheen.setShader(new LinearGradient(
-                    left, top, left, bottom,
-                    new int[]{0x2EFFFFFF, 0x19FFFFFF, 0x07FFFFFF},
-                    new float[]{0f, 0.28f, 1f}, Shader.TileMode.CLAMP));
-            value.border.setShader(new LinearGradient(
-                    left, top, left, bottom,
-                    new int[]{0x36FFFFFF, 0x13FFFFFF, 0x06FFFFFF},
-                    new float[]{0f, 0.40f, 1f}, Shader.TileMode.CLAMP));
         }
-        value.border.setStrokeWidth(Math.max(0.8f, edge * 0.7f));
-        // The previous paletteFill and sheen had fixed alpha values. That
-        // made 35 and 245 look alike even while the slider was saved.
-        int scaled = Math.max(0, Math.min(255, opacity));
-        value.paletteFill.setAlpha(dimmed ? scaled / 3 : scaled);
-        value.sheen.setAlpha(scaled);
-        value.border.setAlpha(scaled);
+        // Retain only a subtle translucent base color. LiquidOptics draws
+        // beveled lens edges, spectral highlights and finite moving glints.
+        // Unlike a permanent frosted overlay, these effects establish depth
+        // without covering Samsung's notification content.
+        value.paletteFill.setAlpha(dimmed ? Math.round(opacity * .16f)
+                : Math.round(opacity * .38f));
         int save = canvas.save();
         canvas.clipPath(value.shape);
-        canvas.drawRoundRect(left, top, right, bottom, corner, corner, value.paletteFill);
-        // A dimmed background can coexist with the main view in transitions:
-        // avoid a second luminous edge when Samsung crossfades them.
-        if (!dimmed) {
-            canvas.drawRoundRect(left, top, right, bottom, corner, corner, value.sheen);
-        }
-        // Samsung's blur already provides a visual boundary. Drawing our own
-        // border on top causes a second, darker ring at high blur intensity.
-        if (!value.blurApplied && !dimmed) {
-            canvas.drawRoundRect(left, top, right, bottom, corner, corner,
-                    value.border);
-        }
+        canvas.drawRoundRect(left, top, right, bottom, corner, corner,
+                value.paletteFill);
         canvas.restoreToCount(save);
+        if (!dimmed && liquidStrength > 0) {
+            LiquidOptics.draw(view, canvas, bounds, cornerRadiusPx,
+                    liquidStrength, opacity, palette);
+        }
     }
 
     private static int readIntField(View view, Field field, int fallback) {
