@@ -1,4 +1,4 @@
-# LiquidNotify v0.6 configuration (One UI 9)
+# LiquidNotify configuration (One UI 9)
 
 This preview preserves Samsung's notification views, touch handling, expansion and dismissal. It changes their native radius and tint only. **It does not implement per-card backdrop blur or a settings app.**
 
@@ -19,7 +19,6 @@ Settings:
 | Key | Values | Default |
 | --- | --- | --- |
 | `liquidnotify_enabled` | 0 off / 1 on | 1 |
-| `liquidnotify_safe_mode` | 0 normal / 1 disables styling | 0 |
 | `liquidnotify_color` | 0 original Samsung tint / 1 custom | 1 |
 | `liquidnotify_radius_enabled` | 0 original Samsung radius / 1 custom | 1 |
 | `liquidnotify_radius_dp` | 18 to 48 (minimum radius; OEM larger values are preserved) | 36 |
@@ -30,7 +29,7 @@ Try opacity 160 for stronger translucency; if text becomes hard to read, return 
 
 ## Recovery
 
-If the visuals are unreadable, run `su -c 'settings put global liquidnotify_safe_mode 1'` in Termux, then reopen the notification shade. If SystemUI crashes, disable LiquidNotify in LSPosed and reboot.
+If the visuals are unreadable, run `su -c 'settings put global liquidnotify_enabled 0'` in Termux, then reopen the notification shade. If SystemUI crashes, disable LiquidNotify in LSPosed and reboot.
 
 ## Design limitations
 
