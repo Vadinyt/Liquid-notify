@@ -64,6 +64,9 @@ final class GlassRenderer {
         int lastRectLeft = Integer.MIN_VALUE;
         int lastRectTop = Integer.MIN_VALUE;
         float lastCorner = -1f;
+        int lastPalette = -1;
+        boolean lastDimmed;
+        final Paint paletteFill = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Path shape = new Path();
         final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
@@ -71,6 +74,7 @@ final class GlassRenderer {
         State() {
             sheen.setStyle(Paint.Style.FILL);
             border.setStyle(Paint.Style.STROKE);
+            paletteFill.setStyle(Paint.Style.FILL);
         }
     }
 
@@ -202,7 +206,7 @@ final class GlassRenderer {
     }
 
     static void afterDraw(View view, Canvas canvas, boolean active,
-                          float cornerRadiusPx) {
+                          float cornerRadiusPx, int palette, boolean dimmed) {
         if (!active) return;
         Drawable drawable = background(view);
         if (drawable == null) return;
@@ -226,15 +230,40 @@ final class GlassRenderer {
         // whenever Samsung native blur is running.
         if (value.lastRectW != bounds.width() || value.lastRectH != bounds.height()
                 || value.lastRectLeft != bounds.left || value.lastRectTop != bounds.top
-                || value.lastCorner != corner) {
+                || value.lastCorner != corner || value.lastPalette != palette
+                || value.lastDimmed != dimmed) {
             value.lastRectW = bounds.width();
             value.lastRectH = bounds.height();
             value.lastRectLeft = bounds.left;
             value.lastRectTop = bounds.top;
             value.lastCorner = corner;
+            value.lastPalette = palette;
+            value.lastDimmed = dimmed;
             value.shape.reset();
             value.shape.addRoundRect(left, top, right, bottom, corner, corner,
                     Path.Direction.CW);
+            // Guaranteed live palette at every native background draw, even
+            // when Samsung resets setTint during row rebinds/transitions.
+            // It is an in-bounds translucent color wash, not a separate View.
+            int topTint;
+            int bottomTint;
+            switch (palette) {
+                case 1: // graphite
+                    topTint = dimmed ? 0x346E7786 : 0x64768191;
+                    bottomTint = dimmed ? 0x20535D70 : 0x45535D70;
+                    break;
+                case 2: // violet
+                    topTint = dimmed ? 0x369A67C4 : 0x64A46BD8;
+                    bottomTint = dimmed ? 0x206945A0 : 0x496945A0;
+                    break;
+                default: // icy blue
+                    topTint = dimmed ? 0x345E96D8 : 0x6466A9EE;
+                    bottomTint = dimmed ? 0x20496B9C : 0x49496B9C;
+                    break;
+            }
+            value.paletteFill.setShader(new LinearGradient(
+                    left, top, right, bottom,
+                    topTint, bottomTint, Shader.TileMode.CLAMP));
             value.sheen.setShader(new LinearGradient(
                     left, top, left, bottom,
                     new int[]{0x2EFFFFFF, 0x19FFFFFF, 0x07FFFFFF},
@@ -247,10 +276,15 @@ final class GlassRenderer {
         value.border.setStrokeWidth(Math.max(0.8f, edge * 0.7f));
         int save = canvas.save();
         canvas.clipPath(value.shape);
-        canvas.drawRoundRect(left, top, right, bottom, corner, corner, value.sheen);
+        canvas.drawRoundRect(left, top, right, bottom, corner, corner, value.paletteFill);
+        // A dimmed background can coexist with the main view in transitions:
+        // avoid a second luminous edge when Samsung crossfades them.
+        if (!dimmed) {
+            canvas.drawRoundRect(left, top, right, bottom, corner, corner, value.sheen);
+        }
         // Samsung's blur already provides a visual boundary. Drawing our own
         // border on top causes a second, darker ring at high blur intensity.
-        if (!value.blurApplied) {
+        if (!value.blurApplied && !dimmed) {
             canvas.drawRoundRect(left, top, right, bottom, corner, corner,
                     value.border);
         }

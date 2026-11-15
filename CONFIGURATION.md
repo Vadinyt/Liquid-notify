@@ -1,4 +1,4 @@
-# LiquidNotify v0.11.0: Clipped native glass
+# LiquidNotify v0.12.0: Live palettes and stable row styling
 
 LiquidNotify modifies Samsung's existing notification background views in `com.android.systemui`. It does not replace the notification center or intercept notifications, gestures, expansion, or dismissal.
 
@@ -51,3 +51,11 @@ No overlay windows or foreground drawables are created. The module does not modi
 - Changes the Frosted Glass preset to opacity 112 and 54 px blur.
 
 The dimmed-background detection uses the Android resource entry name; OEM builds may use other names. Real-device verification on One UI 9 remains necessary.
+
+## v0.12 consistency fixes
+
+- All native notification background drawables, including the dimmed layer, receive a clipped palette wash; the dimmed layer omits blur and highlight edges to avoid overlapping arcs.
+- Palette colors are drawn on every background redraw rather than relying only on Samsung invoking `setTint` on settings changes.
+- A SystemUI ContentObserver listens for LiquidNotify settings and invalidates tracked notification background views immediately, without requiring a restart for ordinary adjustments.
+- Strongly distinct icy blue, graphite, and violet washes remain translucent and are limited to background views; notification text and icons stay untouched.
+- Actual device testing remains necessary to verify all One UI 9 row states and expanded notifications.

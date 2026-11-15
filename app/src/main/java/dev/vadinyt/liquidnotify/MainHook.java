@@ -1,6 +1,9 @@
 package dev.vadinyt.liquidnotify;
 
 import android.app.KeyguardManager;
+import android.database.ContentObserver;
+import android.os.Handler;
+import android.os.Looper;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Color;
@@ -29,7 +32,6 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile long lastRead = -1;
     private static volatile long lastConfigLog = -1;
     private static volatile boolean enabled = true;
-    private static volatile boolean colorEnabled = true;
     private static volatile boolean radiusEnabled = true;
     private static volatile int radiusDp = 36;
     private static volatile int opacity = 185;
@@ -39,11 +41,53 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile boolean loggedTint;
     private static volatile int lastLoggedSignature = Integer.MIN_VALUE;
     private static final WeakHashMap<View, Boolean> DIMMED_CACHE = new WeakHashMap<>();
+    private static final WeakHashMap<View, Boolean> LIVE_VIEWS = new WeakHashMap<>();
+    private static volatile boolean observerRegistered;
+    // Samsung rebinds notification backgrounds as rows expand, collapse or update.
+    // Keep a weak set of active view instances and invalidate on settings changes.
+    private static void watch(View view) {
+        synchronized (LIVE_VIEWS) { LIVE_VIEWS.put(view, Boolean.TRUE); }
+        if (observerRegistered) return;
+        synchronized (MainHook.class) {
+            if (observerRegistered) return;
+            try {
+                ContentObserver observer = new ContentObserver(new Handler(Looper.getMainLooper())) {
+                    @Override public void onChange(boolean selfChange) {
+                        onStyleChanged();
+                    }
+                };
+                String[] names = {"liquidnotify_enabled", "liquidnotify_opacity",
+                        "liquidnotify_palette", "liquidnotify_radius_dp", "liquidnotify_blur_px"};
+                for (String name : names) {
+                    view.getContext().getContentResolver().registerContentObserver(
+                            Settings.Global.getUriFor(name), false, observer);
+                }
+                observerRegistered = true;
+                XposedBridge.log(TAG + ": live settings observer registered");
+            } catch (Throwable e) {
+                XposedBridge.log(TAG + ": settings observer registration failure " + e);
+            }
+        }
+    }
+
+    private static void onStyleChanged() {
+        lastRead = -1;
+        int count = 0;
+        synchronized (LIVE_VIEWS) {
+            for (View view : LIVE_VIEWS.keySet()) {
+                if (view != null) {
+                    view.postInvalidate();
+                    count++;
+                }
+            }
+        }
+        XposedBridge.log(TAG + ": live style refresh, views=" + count);
+    }
 
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": v0.10 Samsung native glass renderer");
+        XposedBridge.log(TAG + ": v0.12 Samsung native glass renderer");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -51,7 +95,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        if (!shouldStyle(view) || !radiusEnabled || isDimmed(view)) return;
+                        if (!shouldStyle(view) || !radiusEnabled) return;
                         float radius = dp(view, radiusDp);
                         // Apply the requested radius, including smaller values.
                         p.args[0] = radius;
@@ -72,7 +116,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        if (!shouldStyle(view) || !colorEnabled || isDimmed(view)) return;
+                        if (!shouldStyle(view)) return;
                         int base = baseColor(isNight(view), palette);
                         // IMPORTANT: apply opacity only once. Older releases made both
                         // the tint and the drawable translucent, multiplying alpha.
@@ -107,8 +151,12 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        boolean active = shouldStyle(view) && colorEnabled && !isDimmed(view);
-                        GlassRenderer.beforeDraw(view, active, opacity, blurPx,
+                        watch(view);
+                        boolean active = shouldStyle(view);
+                        // Dimmed views also need the matching palette, but two
+                        // simultaneous background blurs create ghost outlines.
+                        int effectiveBlur = isDimmed(view) ? 0 : blurPx;
+                        GlassRenderer.beforeDraw(view, active, opacity, effectiveBlur,
                                 dp(view, radiusDp));
                     } catch (Throwable t) {
                         XposedBridge.log(TAG + ": glass beforeDraw failure " + t);
@@ -119,19 +167,19 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        boolean active = shouldStyle(view) && colorEnabled && !isDimmed(view);
+                        boolean active = shouldStyle(view);
                         GlassRenderer.afterDraw(view, (Canvas) p.args[0],
-                                active, dp(view, radiusDp));
+                                active, dp(view, radiusDp), palette, isDimmed(view));
                     } catch (Throwable t) {
                         XposedBridge.log(TAG + ": glass afterDraw failure " + t);
                     }
                 }
             });
-            XposedBridge.log(TAG + ": v0.10 glass draw hooks registered");
+            XposedBridge.log(TAG + ": v0.12 glass draw hooks registered");
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": glass draw hook registration failed " + t);
         }
-        XposedBridge.log(TAG + ": v0.10 hooks registered");
+        XposedBridge.log(TAG + ": v0.12 hooks registered");
     }
 
     private static boolean isDimmed(View view) {
@@ -184,7 +232,6 @@ public final class MainHook implements IXposedHookLoadPackage {
                 if (lastRead < 0 || now - lastRead >= 1500L) {
                     try {
                         enabled = readInt(context, "liquidnotify_enabled", 1, 0, 1) == 1;
-                        colorEnabled = readInt(context, "liquidnotify_color", 1, 0, 1) == 1;
                         radiusEnabled = readInt(context, "liquidnotify_radius_enabled", 1, 0, 1) == 1;
                         radiusDp = readInt(context, "liquidnotify_radius_dp", 36, 18, 48);
                         opacity = readInt(context, "liquidnotify_opacity", 185, 35, 245);
@@ -193,7 +240,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                         if (lastConfigLog < 0 || now - lastConfigLog > 30000L) {
                             lastConfigLog = now;
                             XposedBridge.log(TAG + ": SystemUI reads settings enabled=" + enabled
-                                    + " color=" + colorEnabled + " radius=" + radiusEnabled
+                                    + " radius=" + radiusEnabled
                                     + " radiusDp=" + radiusDp + " opacity=" + opacity
                                     + " palette=" + palette + " blurPx=" + blurPx);
                         }
