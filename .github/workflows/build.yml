@@ -1,4 +1,4 @@
-name: Build LiquidNotify test APK
+name: Build LiquidNotify signed APK
 on:
   push:
     branches: [main]
@@ -20,30 +20,32 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Verify release signing configuration
+      - name: Build signed upgradeable APK
+        shell: bash
         env:
-          KEYSTORE_BASE64: ${{ secrets.LIQUIDNOTIFY_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.LIQUIDNOTIFY_STORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.LIQUIDNOTIFY_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.LIQUIDNOTIFY_KEY_PASSWORD }}
+          SIGNING_BUNDLE: ${{ secrets.LIQUIDNOTIFY_SIGNING }}
         run: |
-          if [[ -z "$KEYSTORE_BASE64" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
-            echo "::error::Missing signing secrets. See SIGNING.md. Refusing to publish an APK with a random debug certificate."
+          set -euo pipefail
+          if [[ -z "$SIGNING_BUNDLE" || "$SIGNING_BUNDLE" != *$'\n'* ]]; then
+            echo "::error::Set LIQUIDNOTIFY_SIGNING to two lines: password, then Base64 keystore. See SIGNING.md."
             exit 1
           fi
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/liquidnotify-release.jks"
-          chmod 600 "$RUNNER_TEMP/liquidnotify-release.jks"
-      - name: Build signed upgradeable APK
-        env:
-          LIQUIDNOTIFY_KEYSTORE_PATH: ${{ runner.temp }}/liquidnotify-release.jks
-          LIQUIDNOTIFY_STORE_PASSWORD: ${{ secrets.LIQUIDNOTIFY_STORE_PASSWORD }}
-          LIQUIDNOTIFY_KEY_ALIAS: ${{ secrets.LIQUIDNOTIFY_KEY_ALIAS }}
-          LIQUIDNOTIFY_KEY_PASSWORD: ${{ secrets.LIQUIDNOTIFY_KEY_PASSWORD }}
-        run: gradle :app:assembleRelease --stacktrace
+          PASSWORD="${SIGNING_BUNDLE%%$'\n'*}"
+          KEYSTORE_BASE64="${SIGNING_BUNDLE#*$'\n'}"
+          if [[ -z "$PASSWORD" || -z "$KEYSTORE_BASE64" ]]; then
+            echo "::error::Invalid LIQUIDNOTIFY_SIGNING secret."
+            exit 1
+          fi
+          echo "::add-mask::$PASSWORD"
+          export LIQUIDNOTIFY_KEYSTORE_PATH="$RUNNER_TEMP/liquidnotify-release.jks"
+          export LIQUIDNOTIFY_STORE_PASSWORD="$PASSWORD"
+          export LIQUIDNOTIFY_KEY_ALIAS="liquidnotify"
+          export LIQUIDNOTIFY_KEY_PASSWORD="$PASSWORD"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$LIQUIDNOTIFY_KEYSTORE_PATH"
+          chmod 600 "$LIQUIDNOTIFY_KEYSTORE_PATH"
+          trap 'rm -f "$LIQUIDNOTIFY_KEYSTORE_PATH"' EXIT
+          gradle :app:assembleRelease --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: LiquidNotify-signed-upgradeable
           path: app/build/outputs/apk/release/*.apk
-      - name: Delete temporary keystore
-        if: always()
-        run: rm -f "$RUNNER_TEMP/liquidnotify-release.jks"
