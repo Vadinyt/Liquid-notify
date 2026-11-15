@@ -10,7 +10,7 @@ android {
         targetSdk = 35
         // GitHub Actions increments this automatically, preserving Android upgrade ordering.
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 3) + 100
-        versionName = "0.12.0-live-palettes"
+        versionName = "0.13.0-opacity-compositing"
     }
 
     signingConfigs {

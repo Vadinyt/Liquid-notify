@@ -87,7 +87,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": v0.12 Samsung native glass renderer");
+        XposedBridge.log(TAG + ": v0.13 Samsung native glass renderer");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -122,10 +122,10 @@ public final class MainHook implements IXposedHookLoadPackage {
                         // the tint and the drawable translucent, multiplying alpha.
                         // For Samsung's native mBackground, keep the tint fully opaque
                         // and apply card alpha in GlassRenderer.beforeDraw().
-                        p.args[0] = GlassRenderer.hasNativeBackground(view)
-                                ? base
-                                : Color.argb(opacity, Color.red(base),
-                                        Color.green(base), Color.blue(base));
+                        // Tint remains fully opaque. All background pixels are
+                        // composited at the selected alpha in the onDraw hook,
+                        // preventing multiple independent alpha multiplications.
+                        p.args[0] = base;
                         int signature = (palette << 16) | (opacity << 8) | radiusDp;
                         if (signature != lastLoggedSignature) {
                             lastLoggedSignature = signature;
@@ -156,8 +156,8 @@ public final class MainHook implements IXposedHookLoadPackage {
                         // Dimmed views also need the matching palette, but two
                         // simultaneous background blurs create ghost outlines.
                         int effectiveBlur = isDimmed(view) ? 0 : blurPx;
-                        GlassRenderer.beforeDraw(view, active, opacity, effectiveBlur,
-                                dp(view, radiusDp));
+                        GlassRenderer.beforeDraw(view, (Canvas) p.args[0], active,
+                                opacity, effectiveBlur, dp(view, radiusDp), palette);
                     } catch (Throwable t) {
                         XposedBridge.log(TAG + ": glass beforeDraw failure " + t);
                     }
@@ -169,17 +169,18 @@ public final class MainHook implements IXposedHookLoadPackage {
                         View view = (View) p.thisObject;
                         boolean active = shouldStyle(view);
                         GlassRenderer.afterDraw(view, (Canvas) p.args[0],
-                                active, dp(view, radiusDp), palette, isDimmed(view));
+                                active, dp(view, radiusDp), palette,
+                                isDimmed(view), opacity);
                     } catch (Throwable t) {
                         XposedBridge.log(TAG + ": glass afterDraw failure " + t);
                     }
                 }
             });
-            XposedBridge.log(TAG + ": v0.12 glass draw hooks registered");
+            XposedBridge.log(TAG + ": v0.13 glass draw hooks registered");
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": glass draw hook registration failed " + t);
         }
-        XposedBridge.log(TAG + ": v0.12 hooks registered");
+        XposedBridge.log(TAG + ": v0.13 hooks registered");
     }
 
     private static boolean isDimmed(View view) {

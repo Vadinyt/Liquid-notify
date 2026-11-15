@@ -51,6 +51,9 @@ final class GlassRenderer {
     private static final class State {
         boolean blurApplied;
         boolean blurFailed;
+        int layerSaveCount = -1;
+        Canvas savedLayerCanvas;
+        int blurColor = Integer.MIN_VALUE;
         boolean outlineInstalled;
         boolean previousClipToOutline;
         ViewOutlineProvider previousOutlineProvider;
@@ -131,8 +134,8 @@ final class GlassRenderer {
         return background(view) != null;
     }
 
-    static void beforeDraw(View view, boolean active, int opacity,
-                           int blurRadiusPx, float cornerRadiusPx) {
+    static void beforeDraw(View view, Canvas canvas, boolean active, int opacity,
+                           int blurRadiusPx, float cornerRadiusPx, int palette) {
         State value = state(view);
         Drawable background = background(view);
 
@@ -146,31 +149,33 @@ final class GlassRenderer {
             return;
         }
 
-        if (background != null) {
-            int requested = Math.max(35, Math.min(245, opacity));
-            int alpha = Math.min(requested, originalAlpha(view));
-            if (alpha != value.lastAlpha || background.getAlpha() != alpha) {
-                background.setAlpha(alpha);
-                value.lastAlpha = alpha;
-                if (!loggedDrawable) {
-                    loggedDrawable = true;
-                    XposedBridge.log(TAG + ": native notification drawable opacity applied");
-                }
-            }
+        // Draw Samsung's entire background into one opacity-controlled layer.
+        // The previous mBackground.setAlpha() did not consistently control
+        // Samsung's internal drawable/layer compositing on One UI 9.
+        // This layer affects only NotificationBackgroundView.onDraw(), never
+        // the notification's text, icons or touch surfaces.
+        if (canvas != null && view.getWidth() > 0 && view.getHeight() > 0
+                && value.layerSaveCount == -1) {
+            final int alpha = Math.max(35, Math.min(245, opacity));
+            value.layerSaveCount = canvas.saveLayerAlpha(
+                    0f, 0f, view.getWidth(), view.getHeight(), alpha);
+            value.savedLayerCanvas = canvas;
         }
 
         blurRadiusPx = Math.max(0, Math.min(80, blurRadiusPx));
+        int nativeTint = glassColor(palette, Math.round(opacity * 0.55f));
         if (blurRadiusPx <= 0) {
             clearBlur(view, value);
         } else if (!value.blurFailed && view.isAttachedToWindow()
                 && view.getWidth() > 0 && view.getHeight() > 0
                 && (!value.blurApplied || value.blurRadius != blurRadiusPx
-                || value.cornerRadius != cornerRadiusPx)) {
+                || value.cornerRadius != cornerRadiusPx
+                || value.blurColor != nativeTint)) {
             if (ensureBlurApi()) {
                 try {
                     Object builder = blurBuilder.newInstance(0); // Samsung MODE_WINDOW
                     setRadius.invoke(builder, blurRadiusPx);
-                    setColor.invoke(builder, Color.TRANSPARENT);
+                    setColor.invoke(builder, nativeTint);
                     setCorners.invoke(builder, cornerRadiusPx, cornerRadiusPx,
                             cornerRadiusPx, cornerRadiusPx);
                     apply.invoke(view, build.invoke(builder));
@@ -178,6 +183,7 @@ final class GlassRenderer {
                     installOutline(view, value, cornerRadiusPx);
                     value.blurRadius = blurRadiusPx;
                     value.cornerRadius = cornerRadiusPx;
+                    value.blurColor = nativeTint;
                     if (!loggedNative) {
                         loggedNative = true;
                         XposedBridge.log(TAG + ": Samsung SemBlurInfo native card blur applied"
@@ -206,7 +212,20 @@ final class GlassRenderer {
     }
 
     static void afterDraw(View view, Canvas canvas, boolean active,
-                          float cornerRadiusPx, int palette, boolean dimmed) {
+                          float cornerRadiusPx, int palette, boolean dimmed,
+                          int opacity) {
+        State drawState = state(view);
+        // Restore the opacity-controlled layer *before* drawing the subtle
+        // color wash and sheen. Everything drawn inside onDraw by Samsung is
+        // now actually affected by the slider, including nested drawables.
+        if (drawState.layerSaveCount != -1 && drawState.savedLayerCanvas == canvas) {
+            try {
+                canvas.restoreToCount(drawState.layerSaveCount);
+            } finally {
+                drawState.layerSaveCount = -1;
+                drawState.savedLayerCanvas = null;
+            }
+        }
         if (!active) return;
         Drawable drawable = background(view);
         if (drawable == null) return;
@@ -274,6 +293,12 @@ final class GlassRenderer {
                     new float[]{0f, 0.40f, 1f}, Shader.TileMode.CLAMP));
         }
         value.border.setStrokeWidth(Math.max(0.8f, edge * 0.7f));
+        // The previous paletteFill and sheen had fixed alpha values. That
+        // made 35 and 245 look alike even while the slider was saved.
+        int scaled = Math.max(0, Math.min(255, opacity));
+        value.paletteFill.setAlpha(dimmed ? scaled / 3 : scaled);
+        value.sheen.setAlpha(scaled);
+        value.border.setAlpha(scaled);
         int save = canvas.save();
         canvas.clipPath(value.shape);
         canvas.drawRoundRect(left, top, right, bottom, corner, corner, value.paletteFill);
@@ -357,6 +382,16 @@ final class GlassRenderer {
         }
     }
 
+    private static int glassColor(int palette, int alpha) {
+        int red, green, blue;
+        switch (palette) {
+            case 1: red = 94; green = 104; blue = 120; break;
+            case 2: red = 125; green = 89; blue = 164; break;
+            default: red = 78; green = 119; blue = 163; break;
+        }
+        return Color.argb(Math.max(0, Math.min(255, alpha)), red, green, blue);
+    }
+
     private static synchronized boolean ensureBlurApi() {
         if (blurApiState != 0) return blurApiState == 1;
         if (!"samsung".equalsIgnoreCase(Build.MANUFACTURER)) {
@@ -386,6 +421,7 @@ final class GlassRenderer {
         if (value.blurApplied) {
             value.blurApplied = false;
             value.blurRadius = -1;
+            value.blurColor = Integer.MIN_VALUE;
             try {
                 if (apply != null) apply.invoke(view, new Object[]{null});
             } catch (Throwable ignored) {

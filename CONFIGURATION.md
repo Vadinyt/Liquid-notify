@@ -1,4 +1,4 @@
-# LiquidNotify v0.12.0: Live palettes and stable row styling
+# LiquidNotify v0.13.0: Consistent glass opacity
 
 LiquidNotify modifies Samsung's existing notification background views in `com.android.systemui`. It does not replace the notification center or intercept notifications, gestures, expansion, or dismissal.
 
@@ -59,3 +59,11 @@ The dimmed-background detection uses the Android resource entry name; OEM builds
 - A SystemUI ContentObserver listens for LiquidNotify settings and invalidates tracked notification background views immediately, without requiring a restart for ordinary adjustments.
 - Strongly distinct icy blue, graphite, and violet washes remain translucent and are limited to background views; notification text and icons stay untouched.
 - Actual device testing remains necessary to verify all One UI 9 row states and expanded notifications.
+
+## v0.13 opacity pipeline
+
+- The opacity slider now composites the complete Samsung notification background on a single alpha layer during `NotificationBackgroundView.onDraw`, without reducing text/icon alpha.
+- Gradient paint and rim alpha are scaled to the same slider value, rather than remaining fixed.
+- Native Samsung blur's background tint is recalculated with palette and opacity, and blur information is refreshed when the tint changes.
+- Setting opacity to 35 should produce a substantially lighter/more transparent surface than 245 on One UI 9. The native blur region remains beneath the background drawable.
+- `saveLayerAlpha` can add GPU compositing work; performance on-device needs verification. If SystemUI slows down, disable LiquidNotify in LSPosed and restart.
