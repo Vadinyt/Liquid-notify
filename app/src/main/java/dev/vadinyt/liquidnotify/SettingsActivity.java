@@ -26,10 +26,10 @@ public final class SettingsActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private LinearLayout root;
     private TextView status;
-    private int opacity = 112;
+    private int opacity = 85;
     private int blurPx = 40;
     private int liquidStrength = 80;
-    private int radius = 36;
+    private int radius = 44;
     private int palette = 0;
     private boolean enabled = true;
     private volatile boolean loading = true;
