@@ -121,7 +121,7 @@ final class GlassRenderer {
         if (background != null) {
             int requested = Math.max(35, Math.min(245, opacity));
             int alpha = Math.min(requested, originalAlpha(view));
-            if (alpha != value.lastAlpha) {
+            if (alpha != value.lastAlpha || background.getAlpha() != alpha) {
                 background.setAlpha(alpha);
                 value.lastAlpha = alpha;
                 if (!loggedDrawable) {
