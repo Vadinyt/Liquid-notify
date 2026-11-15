@@ -10,7 +10,7 @@ android {
         targetSdk = 35
         // GitHub Actions increments this automatically, preserving Android upgrade ordering.
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 3) + 100
-        versionName = "0.15.0-liquid-optics"
+        versionName = "0.15.1-liquid-ui-insets"
     }
 
     signingConfigs {
