@@ -4,6 +4,8 @@ import android.app.KeyguardManager;
 import android.content.Context;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.graphics.Canvas;
+import android.graphics.drawable.Drawable;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.TypedValue;
@@ -33,6 +35,8 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile int palette = 0;
     private static volatile boolean loggedRadius;
     private static volatile boolean loggedTint;
+    private static volatile boolean loggedDrawable;
+    private static volatile boolean loggedMissingDrawable;
     private static volatile int lastLoggedSignature = Integer.MIN_VALUE;
 
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
@@ -78,6 +82,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                                     + " opacity=" + opacity + " radiusDp=" + radiusDp
                                     + " tint=0x" + Integer.toHexString((Integer) p.args[0]));
                         }
+                        applyDrawableOpacity(view);
                         view.invalidate();
                         if (!loggedTint) {
                             loggedTint = true;
@@ -87,7 +92,52 @@ public final class MainHook implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable t) { XposedBridge.log(TAG + ": tint registration failed " + t); }
+        // Samsung may overwrite drawable alpha while updating notification tint.
+        // Reapply just before drawing the card background, never the content row.
+        try {
+            XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
+                    "onDraw", Canvas.class, new XC_MethodHook() {
+                @Override protected void beforeHookedMethod(MethodHookParam p) {
+                    try {
+                        if (p.thisObject instanceof View) {
+                            View view = (View) p.thisObject;
+                            if (shouldStyle(view) && colorEnabled) applyDrawableOpacity(view);
+                        }
+                    } catch (Throwable t) {
+                        XposedBridge.log(TAG + ": drawable draw failure " + t);
+                    }
+                }
+            });
+            XposedBridge.log(TAG + ": drawable alpha hook registered");
+        } catch (Throwable t) {
+            XposedBridge.log(TAG + ": drawable alpha registration unavailable " + t);
+        }
         XposedBridge.log(TAG + ": unified hooks registered");
+    }
+
+    private static void applyDrawableOpacity(View view) {
+        // mBackground is the drawable painted by NotificationBackgroundView,
+        // not the View's background or the notification content.
+        try {
+            Object object = XposedHelpers.getObjectField(view, "mBackground");
+            if (!(object instanceof Drawable)) return;
+            Drawable drawable = (Drawable) object;
+            drawable.setAlpha(opacity);
+            if (!loggedDrawable) {
+                loggedDrawable = true;
+                XposedBridge.log(TAG + ": native background drawable alpha active: " + opacity);
+            }
+        } catch (NoSuchFieldError e) {
+            if (!loggedMissingDrawable) {
+                loggedMissingDrawable = true;
+                XposedBridge.log(TAG + ": mBackground not found on this One UI build");
+            }
+        } catch (Throwable t) {
+            if (!loggedMissingDrawable) {
+                loggedMissingDrawable = true;
+                XposedBridge.log(TAG + ": drawable opacity unavailable " + t);
+            }
+        }
     }
 
     private static int baseColor(boolean night, int selected) {
@@ -124,7 +174,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                         colorEnabled = readInt(context, "liquidnotify_color", 1, 0, 1) == 1;
                         radiusEnabled = readInt(context, "liquidnotify_radius_enabled", 1, 0, 1) == 1;
                         radiusDp = readInt(context, "liquidnotify_radius_dp", 36, 18, 48);
-                        opacity = readInt(context, "liquidnotify_opacity", 185, 125, 245);
+                        opacity = readInt(context, "liquidnotify_opacity", 185, 35, 245);
                         palette = readInt(context, "liquidnotify_palette", 0, 0, 2);
                         if (lastConfigLog < 0 || now - lastConfigLog > 30000L) {
                             lastConfigLog = now;
