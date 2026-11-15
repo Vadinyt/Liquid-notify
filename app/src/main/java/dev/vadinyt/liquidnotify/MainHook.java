@@ -15,7 +15,7 @@ import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
 /**
- * LiquidNotify v0.6: configurable native card tint and shape.
+ * LiquidNotify unified: configurable native card tint and shape.
  * No replacement shade, touch interception, or fake backdrop blur.
  * Settings.Global keys can be changed using an authorized adb/root shell.
  */
@@ -25,7 +25,6 @@ public final class MainHook implements IXposedHookLoadPackage {
             "com.android.systemui.statusbar.notification.row.NotificationBackgroundView";
     private static volatile long lastRead = -1;
     private static volatile boolean enabled = true;
-    private static volatile boolean safeMode;
     private static volatile boolean colorEnabled = true;
     private static volatile boolean radiusEnabled = true;
     private static volatile int radiusDp = 36;
@@ -37,7 +36,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": v0.6 configurable native glass surfaces");
+        XposedBridge.log(TAG + ": unified native glass surfaces");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -77,7 +76,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                 }
             });
         } catch (Throwable t) { XposedBridge.log(TAG + ": tint registration failed " + t); }
-        XposedBridge.log(TAG + ": v0.6 hooks registered");
+        XposedBridge.log(TAG + ": unified hooks registered");
     }
 
     private static int baseColor(boolean night, int selected) {
@@ -111,7 +110,6 @@ public final class MainHook implements IXposedHookLoadPackage {
                 if (lastRead < 0 || now - lastRead >= 1500L) {
                     try {
                         enabled = readInt(context, "liquidnotify_enabled", 1, 0, 1) == 1;
-                        safeMode = readInt(context, "liquidnotify_safe_mode", 0, 0, 1) == 1;
                         colorEnabled = readInt(context, "liquidnotify_color", 1, 0, 1) == 1;
                         radiusEnabled = readInt(context, "liquidnotify_radius_enabled", 1, 0, 1) == 1;
                         radiusDp = readInt(context, "liquidnotify_radius_dp", 36, 18, 48);
@@ -125,7 +123,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                 }
             }
         }
-        if (!enabled || safeMode) return false;
+        if (!enabled) return false;
         try {
             KeyguardManager km = (KeyguardManager) context.getSystemService(Context.KEYGUARD_SERVICE);
             return km != null && !km.isKeyguardLocked();
