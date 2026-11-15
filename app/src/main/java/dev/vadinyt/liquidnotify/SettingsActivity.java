@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.view.View;
+import android.view.WindowInsets;
 import android.widget.Button;
 import android.widget.LinearLayout;
 import android.widget.RadioGroup;
@@ -36,10 +37,24 @@ public final class SettingsActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().setStatusBarColor(0xFF171C29);
+        // One UI 9 / Android 17 draws targetSdk 35 apps edge-to-edge.
+        // Explicitly manage insets so the heading is never drawn behind the
+        // status bar, including when display cutouts or font scales change.
+        getWindow().setDecorFitsSystemWindows(false);
+        getWindow().setStatusBarColor(Color.TRANSPARENT);
         getWindow().setNavigationBarColor(0xFF171C29);
         android.widget.ScrollView scroll = new android.widget.ScrollView(this);
         scroll.setFillViewport(true);
+        scroll.setBackgroundColor(0xFF171C29);
+        scroll.setOnApplyWindowInsetsListener((v, insets) -> {
+            android.graphics.Insets bars = insets.getInsets(
+                    WindowInsets.Type.statusBars() | WindowInsets.Type.navigationBars()
+                            | WindowInsets.Type.displayCutout());
+            // Consume padding in the scroll container, leaving content
+            // scrollable without an overlapping transparent system bar.
+            v.setPadding(bars.left, bars.top, bars.right, bars.bottom);
+            return insets;
+        });
         root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setPadding(dp(24), dp(28), dp(24), dp(28));
