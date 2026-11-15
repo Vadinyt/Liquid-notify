@@ -1,36 +1,42 @@
-# LiquidNotify configuration (One UI 9)
+# LiquidNotify v0.9.0: Samsung native glass preview
 
-This preview preserves Samsung's notification views, touch handling, expansion and dismissal. It changes their native radius and tint only. **It does not implement per-card backdrop blur or a settings app.**
+LiquidNotify modifies Samsung's existing notification background views in `com.android.systemui`. It does not replace the notification center or intercept notifications, gestures, expansion, or dismissal.
 
-Requires root shell or authorized ADB to change `Settings.Global`. Defaults work without any commands. Some changes may not show until Samsung calls `setTint` or `setRadius` again, such as when reopening the shade or receiving a notification.
+**New experimental effect:** tries Samsung's `View.semSetBlurInfo(SemBlurInfo)` with a rounded native blur region for each notification, and adds subtle *in-bounds* sheen and rim rendering directly in the notification background's draw pass. This OEM API was reported on One UI 8.5, but is **not yet verified on Galaxy S23+ One UI 9 / Android 17**. When unavailable, blur is skipped and the tinted cards remain.
 
-## Commands (rooted Android / Termux)
+## Controls
 
-Open a root shell with `su` first. Then:
+Open the LiquidNotify launcher application and allow root in KernelSU. Values are saved in `Settings.Global` and read by SystemUI.
 
-```sh
-settings put global liquidnotify_opacity 185
-settings put global liquidnotify_palette 0
-settings put global liquidnotify_radius_dp 36
-```
+| Setting | Internal key | Range | Default |
+| --- | --- | --- | --- |
+| Enable styling | `liquidnotify_enabled` | 0 or 1 | 1 |
+| Card opacity | `liquidnotify_opacity` | 35–245 (higher is more opaque) | 185 |
+| Native blur strength | `liquidnotify_blur_px` | 0–120 pixels, 0 disables blur | 88 |
+| Card radius | `liquidnotify_radius_dp` | 18–48 dp | 36 |
+| Color palette | `liquidnotify_palette` | 0 icy blue / 1 graphite / 2 violet | 0 |
 
-Settings:
+Legacy expert toggles `liquidnotify_color` and `liquidnotify_radius_enabled` remain available as 0/1 values.
 
-| Key | Values | Default |
-| --- | --- | --- |
-| `liquidnotify_enabled` | 0 off / 1 on | 1 |
-| `liquidnotify_color` | 0 original Samsung tint / 1 custom | 1 |
-| `liquidnotify_radius_enabled` | 0 original Samsung radius / 1 custom | 1 |
-| `liquidnotify_radius_dp` | 18 to 48 (minimum radius; OEM larger values are preserved) | 36 |
-| `liquidnotify_opacity` | 125 to 245 (higher means more opaque) | 185 |
-| `liquidnotify_palette` | 0 icy blue, 1 graphite, 2 violet | 0 |
+The effect only operates on the unlocked notification shade. A soft restart of SystemUI may help initial hook loading; later changes should appear when notification backgrounds are redrawn.
 
-Try opacity 160 for stronger translucency; if text becomes hard to read, return to 185 or higher. These values apply only to the unlocked notification shade; keyguard is excluded.
+## Diagnostic logs
+
+Look for:
+- `Samsung SemBlurInfo blur API found`: reflective method lookup succeeded
+- `Samsung SemBlurInfo native card blur applied`: Samsung accepted the blur request
+- `Samsung SemBlurInfo unavailable`: API not available on this firmware
+- `Samsung native card blur failed`: applying the OEM blur threw an exception
+- `native notification drawable opacity applied`: background alpha adjustment ran
+
+An accepted blur request does not by itself prove a visible blur effect. Compare photos with blur 0 px and 100 px at a low opacity over a wallpaper with varied colors.
 
 ## Recovery
 
-If the visuals are unreadable, run `su -c 'settings put global liquidnotify_enabled 0'` in Termux, then reopen the notification shade. If SystemUI crashes, disable LiquidNotify in LSPosed and reboot.
+If SystemUI does not render correctly, disable LiquidNotify in LSPosed and restart the phone. The app also has a normal enable/disable toggle. There is no separate safe mode.
 
-## Design limitations
+## Engineering limitations
 
-Samsung may override the alpha channel internally when it draws notification backgrounds. In that case opacity settings may not yield visible wallpaper translucency. Genuine backdrop blur requires verified One UI 9 native APIs and device testing. No foreground drawable overlay is used, avoiding the v0.4 rectangular border artifact.
+Samsung may draw extra backing layers around notification rows, beyond `NotificationBackgroundView.mBackground`. The module does not alter those other layers. Blurring each view may depend on GPU support, OEM blur policy, power saving, or view attachment; the native API can be present yet ineffective.
+
+No overlay windows or foreground drawables are created. The module does not modify the keyboard or other applications.
