@@ -34,10 +34,10 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile boolean enabled = true;
     private static volatile boolean radiusEnabled = true;
     private static volatile int radiusDp = 44;
-    private static volatile int opacity = 85;
+    private static volatile int opacity = 104;
     private static volatile int palette = 0;
-    private static volatile int blurPx = 40;
-    private static volatile int liquidStrength = 80;
+    private static volatile int blurPx = 28;
+    private static volatile int liquidStrength = 86;
     private static volatile boolean loggedRadius;
     private static volatile boolean loggedTint;
     private static volatile int lastLoggedSignature = Integer.MIN_VALUE;
@@ -78,7 +78,21 @@ public final class MainHook implements IXposedHookLoadPackage {
         synchronized (LIVE_VIEWS) {
             for (View view : LIVE_VIEWS.keySet()) {
                 if (view != null) {
-                    view.postInvalidate();
+                    view.post(() -> {
+                        if (shouldStyle(view)) {
+                            // Force Samsung to receive the latest palette even
+                            // if its own setTint() does not fire on this update.
+                            try {
+                                java.lang.reflect.Method method =
+                                        view.getClass().getDeclaredMethod("setTint", int.class);
+                                method.setAccessible(true);
+                                method.invoke(view, baseColor(isNight(view), palette));
+                            } catch (Throwable ignored) {
+                                // The draw-pass palette wash is the fallback.
+                            }
+                        }
+                        view.invalidate();
+                    });
                     count++;
                 }
             }
@@ -89,7 +103,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": v0.15 Samsung native glass renderer");
+        XposedBridge.log(TAG + ": v0.16 Samsung native glass renderer");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -178,11 +192,11 @@ public final class MainHook implements IXposedHookLoadPackage {
                     }
                 }
             });
-            XposedBridge.log(TAG + ": v0.15 glass draw hooks registered");
+            XposedBridge.log(TAG + ": v0.16 glass draw hooks registered");
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": glass draw hook registration failed " + t);
         }
-        XposedBridge.log(TAG + ": v0.15 hooks registered");
+        XposedBridge.log(TAG + ": v0.16 hooks registered");
     }
 
     private static boolean isDimmed(View view) {
@@ -206,9 +220,9 @@ public final class MainHook implements IXposedHookLoadPackage {
 
     private static int baseColor(boolean night, int selected) {
         switch (selected) {
-            case 1: return night ? 0xFF464A58 : 0xFF535B68; // brighter graphite
-            case 2: return night ? 0xFF51456C : 0xFF655478; // soft violet
-            default: return night ? 0xFF485D77 : 0xFF60758D; // mist blue
+            case 1: return night ? 0xFFC2CBD9 : 0xFFE4E9F1; // pale graphite
+            case 2: return night ? 0xFFCEB7EC : 0xFFEFDAFF; // pearl violet
+            default: return night ? 0xFFBADDF9 : 0xFFE5F5FF; // clear sky blue
         }
     }
 
@@ -237,10 +251,10 @@ public final class MainHook implements IXposedHookLoadPackage {
                         enabled = readInt(context, "liquidnotify_enabled", 1, 0, 1) == 1;
                         radiusEnabled = readInt(context, "liquidnotify_radius_enabled", 1, 0, 1) == 1;
                         radiusDp = readInt(context, "liquidnotify_radius_dp", 44, 18, 48);
-                        opacity = readInt(context, "liquidnotify_opacity", 85, 35, 245);
+                        opacity = readInt(context, "liquidnotify_opacity", 104, 35, 245);
                         palette = readInt(context, "liquidnotify_palette", 0, 0, 2);
-                        blurPx = readInt(context, "liquidnotify_blur_px", 40, 0, 80);
-                        liquidStrength = readInt(context, "liquidnotify_liquid_strength", 80, 0, 100);
+                        blurPx = readInt(context, "liquidnotify_blur_px", 28, 0, 80);
+                        liquidStrength = readInt(context, "liquidnotify_liquid_strength", 86, 0, 100);
                         if (lastConfigLog < 0 || now - lastConfigLog > 30000L) {
                             lastConfigLog = now;
                             XposedBridge.log(TAG + ": SystemUI reads settings enabled=" + enabled

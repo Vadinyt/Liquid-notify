@@ -1,4 +1,4 @@
-# LiquidNotify v0.15.0: Liquid Glass optical surfaces
+# LiquidNotify v0.16.0: Clear Liquid Glass reference
 
 LiquidNotify modifies Samsung's existing notification background views in `com.android.systemui`. It does not replace the notification center or intercept notifications, gestures, expansion, or dismissal.
 
@@ -19,7 +19,7 @@ Open the LiquidNotify launcher application and allow root in KernelSU. Values ar
 
 Legacy expert toggles `liquidnotify_color` and `liquidnotify_radius_enabled` remain available as 0/1 values.
 
-The app now provides an **Apply Frosted Glass Preset** button setting opacity 112, blur 54 px and radius 38 dp. The native tint remains fully opaque; opacity is applied once to Samsung's drawable, correcting earlier double multiplication of alpha. A single clipped inner sheen is used; the extra stroke is omitted when native blur is active.
+The app provides a **Clear Liquid Glass** preset; the previous frosted preset is historical. The native tint remains fully opaque; opacity is applied once to Samsung's drawable, correcting earlier double multiplication of alpha. A single clipped inner sheen is used; the extra stroke is omitted when native blur is active.
 
 The effect only operates on the unlocked notification shade. A soft restart of SystemUI may help initial hook loading; later changes should appear when notification backgrounds are redrawn.
 
@@ -84,3 +84,15 @@ LiquidNotify now draws **liquid optical effects** inside each Samsung notificati
 The prior Frosted Glass preset is replaced by **APPLY LIQUID GLASS**, using opacity 85, Samsung blur 40 px, 44 dp radius and reflection intensity 80/100. The blur remains a secondary supporting effect. The app and root settings now expose `liquidnotify_liquid_strength` (0–100).
 
 **Rendering limitation:** This is a lensing *simulation*, not true optical refraction of the wallpaper; that would require sampling the background using an OEM GPU shader. Native content, text, notification actions, and animations remain Samsung-owned. Some nonstandard, clipped OEM states still omit additional optical effects to preserve correct geometry.
+
+## v0.16 reference-based clear lens
+
+Target: the user-supplied iOS-style light-blue translucent notification (15 Nov 2026) with a fine white top-edge and no dark matte panel.
+
+- The Samsung tint is now **pale sky blue**, pale graphite or pearl lavender, instead of dark blue-gray. The same palette is applied on live updates and normal OEM row rebinds.
+- The native Samsung blur's background color is brighter and less opaque. Blur remains secondary to the material itself.
+- A *material* top-to-bottom glaze, two internal lens rims, cyan edge spill and a small time-limited reflection replace the previous stronger blue/violet decorative overlay.
+- Preset **APPLY CLEAR LIQUID GLASS** saves palette icy blue, opacity 104, blur 28 px, reflection intensity 86, and 44 dp radius.
+- Real wallpaper-pixel refraction remains unimplemented; this is an optical simulation using native Samsung backgrounds. On a dark wallpaper, the result must still be darker than the bright-sky reference because no wallpaper pixel sampling is performed.
+
+Please compare compact and expanded notifications, palette switching and low versus high opacity, and verify root. The signed GitHub Actions APK is intended to install over the previous release.

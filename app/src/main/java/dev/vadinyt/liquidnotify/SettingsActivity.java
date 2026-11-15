@@ -27,9 +27,9 @@ public final class SettingsActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private LinearLayout root;
     private TextView status;
-    private int opacity = 85;
-    private int blurPx = 40;
-    private int liquidStrength = 80;
+    private int opacity = 104;
+    private int blurPx = 28;
+    private int liquidStrength = 86;
     private int radius = 44;
     private int palette = 0;
     private boolean enabled = true;
@@ -65,7 +65,7 @@ public final class SettingsActivity extends Activity {
         TextView title = label("LiquidNotify", 28, 0xFFFFFFFF);
         title.setTypeface(null, Typeface.BOLD);
         root.addView(title);
-        root.addView(label("One UI 9 • Liquid Glass notification surfaces", 13, 0xFFA7B5CA));
+        root.addView(label("One UI 9 • Clear Liquid Glass notifications", 13, 0xFFA7B5CA));
         spacer(20);
 
         Switch toggle = new Switch(this);
@@ -150,28 +150,30 @@ public final class SettingsActivity extends Activity {
         });
 
         spacer(18);
-        root.addView(label("Liquid Glass: reflections 80, opacity 85, blur 40.",
+        root.addView(label("Clear Liquid Glass: reflections 86, opacity 104, blur 28.",
                 13, 0xFFA7B5CA));
         spacer(12);
         status = label("Changes apply when notifications redraw.", 13, 0xFFA7B5CA);
         root.addView(status);
         spacer(12);
         Button frosted = new Button(this);
-        frosted.setText("APPLY LIQUID GLASS");
+        frosted.setText("APPLY CLEAR LIQUID GLASS");
         root.addView(frosted);
         frosted.setOnClickListener(v -> {
             if (loading) return;
             status.setText("Applying Liquid Glass...");
             worker.execute(() -> {
                 boolean ok = hasRoot()
-                        && runRoot("settings put global liquidnotify_opacity 85")
-                        && runRoot("settings put global liquidnotify_blur_px 40")
-                        && runRoot("settings put global liquidnotify_liquid_strength 80")
+                        && runRoot("settings put global liquidnotify_opacity 104")
+                        && runRoot("settings put global liquidnotify_blur_px 28")
+                        && runRoot("settings put global liquidnotify_liquid_strength 86")
                         && runRoot("settings put global liquidnotify_radius_dp 44")
-                        && readRoot("liquidnotify_opacity", -1) == 85
-                        && readRoot("liquidnotify_blur_px", -1) == 40
-                        && readRoot("liquidnotify_liquid_strength", -1) == 80
-                        && readRoot("liquidnotify_radius_dp", -1) == 44;
+                        && runRoot("settings put global liquidnotify_palette 0")
+                        && readRoot("liquidnotify_opacity", -1) == 104
+                        && readRoot("liquidnotify_blur_px", -1) == 28
+                        && readRoot("liquidnotify_liquid_strength", -1) == 86
+                        && readRoot("liquidnotify_radius_dp", -1) == 44
+                        && readRoot("liquidnotify_palette", -1) == 0;
                 runOnUiThread(() -> {
                     if (ok) {
                         load(toggle, alpha, alphaValue, blurBar, blurValue,
@@ -238,9 +240,9 @@ public final class SettingsActivity extends Activity {
             boolean rootGranted = hasRoot();
             int[] values = new int[] {
                 readRoot("liquidnotify_enabled", 1),
-                readRoot("liquidnotify_opacity", 85),
-                readRoot("liquidnotify_blur_px", 40),
-                readRoot("liquidnotify_liquid_strength", 80),
+                readRoot("liquidnotify_opacity", 104),
+                readRoot("liquidnotify_blur_px", 28),
+                readRoot("liquidnotify_liquid_strength", 86),
                 readRoot("liquidnotify_radius_dp", 44),
                 readRoot("liquidnotify_palette", 0)
             };

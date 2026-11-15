@@ -154,7 +154,7 @@ final class GlassRenderer {
         }
 
         blurRadiusPx = Math.max(0, Math.min(80, blurRadiusPx));
-        int nativeTint = glassColor(palette, Math.round(opacity * 0.55f));
+        int nativeTint = glassColor(palette, Math.round(opacity * 0.36f));
         // SemBlurInfo blurs the whole render node, while Samsung can draw a
         // smaller card inside it. Those bounds diverge during expansion and
         // shade transitions, producing square cutoffs/ghost crescents.
@@ -274,16 +274,16 @@ final class GlassRenderer {
             int bottomTint;
             switch (palette) {
                 case 1: // graphite
-                    topTint = dimmed ? 0x346E7786 : 0x64768191;
-                    bottomTint = dimmed ? 0x20535D70 : 0x45535D70;
+                    topTint = dimmed ? 0x26C3CFDB : 0x7CDDE6F1;
+                    bottomTint = dimmed ? 0x16ADB9C9 : 0x39BCCAD9;
                     break;
                 case 2: // violet
-                    topTint = dimmed ? 0x369A67C4 : 0x64A46BD8;
-                    bottomTint = dimmed ? 0x206945A0 : 0x496945A0;
+                    topTint = dimmed ? 0x24D8BBF3 : 0x7DE6CEFA;
+                    bottomTint = dimmed ? 0x16BEA4E2 : 0x3EBEABEF;
                     break;
                 default: // icy blue
-                    topTint = dimmed ? 0x345E96D8 : 0x6466A9EE;
-                    bottomTint = dimmed ? 0x20496B9C : 0x49496B9C;
+                    topTint = dimmed ? 0x26B8E0FF : 0x88DEEEFF;
+                    bottomTint = dimmed ? 0x1688BCE8 : 0x43A9D8FF;
                     break;
             }
             value.paletteFill.setShader(new LinearGradient(
@@ -294,8 +294,8 @@ final class GlassRenderer {
         // beveled lens edges, spectral highlights and finite moving glints.
         // Unlike a permanent frosted overlay, these effects establish depth
         // without covering Samsung's notification content.
-        value.paletteFill.setAlpha(dimmed ? Math.round(opacity * .16f)
-                : Math.round(opacity * .38f));
+        value.paletteFill.setAlpha(dimmed ? Math.round(opacity * .30f)
+                : Math.round(opacity * .85f));
         int save = canvas.save();
         canvas.clipPath(value.shape);
         canvas.drawRoundRect(left, top, right, bottom, corner, corner,
@@ -344,9 +344,9 @@ final class GlassRenderer {
     private static int glassColor(int palette, int alpha) {
         int red, green, blue;
         switch (palette) {
-            case 1: red = 94; green = 104; blue = 120; break;
-            case 2: red = 125; green = 89; blue = 164; break;
-            default: red = 78; green = 119; blue = 163; break;
+            case 1: red = 205; green = 215; blue = 229; break;
+            case 2: red = 221; green = 190; blue = 242; break;
+            default: red = 204; green = 230; blue = 252; break;
         }
         return Color.argb(Math.max(0, Math.min(255, alpha)), red, green, blue);
     }
