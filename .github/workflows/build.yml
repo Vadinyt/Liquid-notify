@@ -24,5 +24,5 @@ jobs:
       - run: gradle :app:assembleDebug --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidNotify-v0.2.0-test
+          name: LiquidNotify-v0.3.0-experimental
           path: app/build/outputs/apk/debug/*.apk
