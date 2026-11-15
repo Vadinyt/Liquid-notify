@@ -6,6 +6,7 @@ import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Canvas;
 import android.graphics.drawable.Drawable;
+import java.lang.reflect.Field;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.TypedValue;
@@ -119,7 +120,9 @@ public final class MainHook implements IXposedHookLoadPackage {
         // mBackground is the drawable painted by NotificationBackgroundView,
         // not the View's background or the notification content.
         try {
-            Object object = XposedHelpers.getObjectField(view, "mBackground");
+            Field field = view.getClass().getDeclaredField("mBackground");
+            field.setAccessible(true);
+            Object object = field.get(view);
             if (!(object instanceof Drawable)) return;
             Drawable drawable = (Drawable) object;
             drawable.setAlpha(opacity);
