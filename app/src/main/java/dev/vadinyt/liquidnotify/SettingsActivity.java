@@ -138,7 +138,7 @@ public final class SettingsActivity extends Activity {
         refresh.setText("Reload saved values");
         root.addView(refresh);
         refresh.setOnClickListener(v -> load(toggle, alpha, alphaValue, blurBar, blurValue, corners, radiusValue, group));
-        load(toggle, alpha, alphaValue, corners, radiusValue, group);
+        load(toggle, alpha, alphaValue, blurBar, blurValue, corners, radiusValue, group);
     }
 
     private interface ValueUpdate { void update(int value); }
