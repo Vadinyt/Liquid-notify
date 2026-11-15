@@ -32,7 +32,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile int radiusDp = 36;
     private static volatile int opacity = 185;
     private static volatile int palette = 0;
-    private static volatile int blurPx = 88;
+    private static volatile int blurPx = 64;
     private static volatile boolean loggedRadius;
     private static volatile boolean loggedTint;
     private static volatile int lastLoggedSignature = Integer.MIN_VALUE;
@@ -40,7 +40,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": v0.9 Samsung native glass renderer");
+        XposedBridge.log(TAG + ": v0.10 Samsung native glass renderer");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -71,8 +71,14 @@ public final class MainHook implements IXposedHookLoadPackage {
                         View view = (View) p.thisObject;
                         if (!shouldStyle(view) || !colorEnabled) return;
                         int base = baseColor(isNight(view), palette);
-                        p.args[0] = Color.argb(opacity, Color.red(base),
-                                Color.green(base), Color.blue(base));
+                        // IMPORTANT: apply opacity only once. Older releases made both
+                        // the tint and the drawable translucent, multiplying alpha.
+                        // For Samsung's native mBackground, keep the tint fully opaque
+                        // and apply card alpha in GlassRenderer.beforeDraw().
+                        p.args[0] = GlassRenderer.hasNativeBackground(view)
+                                ? base
+                                : Color.argb(opacity, Color.red(base),
+                                        Color.green(base), Color.blue(base));
                         int signature = (palette << 16) | (opacity << 8) | radiusDp;
                         if (signature != lastLoggedSignature) {
                             lastLoggedSignature = signature;
@@ -118,11 +124,11 @@ public final class MainHook implements IXposedHookLoadPackage {
                     }
                 }
             });
-            XposedBridge.log(TAG + ": v0.9 glass draw hooks registered");
+            XposedBridge.log(TAG + ": v0.10 glass draw hooks registered");
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": glass draw hook registration failed " + t);
         }
-        XposedBridge.log(TAG + ": v0.9 hooks registered");
+        XposedBridge.log(TAG + ": v0.10 hooks registered");
     }
 
     private static int baseColor(boolean night, int selected) {
@@ -161,7 +167,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                         radiusDp = readInt(context, "liquidnotify_radius_dp", 36, 18, 48);
                         opacity = readInt(context, "liquidnotify_opacity", 185, 35, 245);
                         palette = readInt(context, "liquidnotify_palette", 0, 0, 2);
-                        blurPx = readInt(context, "liquidnotify_blur_px", 88, 0, 120);
+                        blurPx = readInt(context, "liquidnotify_blur_px", 64, 0, 80);
                         if (lastConfigLog < 0 || now - lastConfigLog > 30000L) {
                             lastConfigLog = now;
                             XposedBridge.log(TAG + ": SystemUI reads settings enabled=" + enabled

@@ -1,4 +1,4 @@
-# LiquidNotify v0.9.0: Samsung native glass preview
+# LiquidNotify v0.10.0: Frosted glass tuning
 
 LiquidNotify modifies Samsung's existing notification background views in `com.android.systemui`. It does not replace the notification center or intercept notifications, gestures, expansion, or dismissal.
 
@@ -11,12 +11,14 @@ Open the LiquidNotify launcher application and allow root in KernelSU. Values ar
 | Setting | Internal key | Range | Default |
 | --- | --- | --- | --- |
 | Enable styling | `liquidnotify_enabled` | 0 or 1 | 1 |
-| Card opacity | `liquidnotify_opacity` | 35–245 (higher is more opaque) | 185 |
-| Native blur strength | `liquidnotify_blur_px` | 0–120 pixels, 0 disables blur | 88 |
+| Card opacity | `liquidnotify_opacity` | 35–245 (higher is more opaque) | 105 |
+| Native blur strength | `liquidnotify_blur_px` | 0–80 pixels, 0 disables blur | 64 |
 | Card radius | `liquidnotify_radius_dp` | 18–48 dp | 36 |
 | Color palette | `liquidnotify_palette` | 0 icy blue / 1 graphite / 2 violet | 0 |
 
 Legacy expert toggles `liquidnotify_color` and `liquidnotify_radius_enabled` remain available as 0/1 values.
+
+The app now provides an **Apply Frosted Glass Preset** button setting opacity 105, blur 64 px and radius 38 dp. The native tint remains fully opaque; opacity is applied once to Samsung's drawable, correcting earlier double multiplication of alpha. A single clipped inner sheen is used; the extra stroke is omitted when native blur is active.
 
 The effect only operates on the unlocked notification shade. A soft restart of SystemUI may help initial hook loading; later changes should appear when notification backgrounds are redrawn.
 

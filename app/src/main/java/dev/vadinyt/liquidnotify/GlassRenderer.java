@@ -4,6 +4,7 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
 import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Rect;
 import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
@@ -49,6 +50,10 @@ final class GlassRenderer {
         int lastAlpha = -1;
         int lastRectW = -1;
         int lastRectH = -1;
+        int lastRectLeft = Integer.MIN_VALUE;
+        int lastRectTop = Integer.MIN_VALUE;
+        float lastCorner = -1f;
+        final Path shape = new Path();
         final Paint sheen = new Paint(Paint.ANTI_ALIAS_FLAG);
         final Paint border = new Paint(Paint.ANTI_ALIAS_FLAG);
 
@@ -103,6 +108,10 @@ final class GlassRenderer {
         }
     }
 
+    static boolean hasNativeBackground(View view) {
+        return background(view) != null;
+    }
+
     static void beforeDraw(View view, boolean active, int opacity,
                            int blurRadiusPx, float cornerRadiusPx) {
         State value = state(view);
@@ -131,6 +140,7 @@ final class GlassRenderer {
             }
         }
 
+        blurRadiusPx = Math.max(0, Math.min(80, blurRadiusPx));
         if (blurRadiusPx <= 0) {
             clearBlur(view, value);
         } else if (!value.blurFailed && view.isAttachedToWindow()
@@ -191,26 +201,40 @@ final class GlassRenderer {
         if (right <= left || bottom <= top) return;
         float corner = Math.min(cornerRadiusPx, Math.min(right - left, bottom - top) / 2f);
 
-        // Retained paint/shader state prevents needless allocations every frame.
-        if (value.lastRectW != bounds.width() || value.lastRectH != bounds.height()) {
+        // The old broad white stroke was added over Samsung's own rounded
+        // blur surface, creating a doubled outline. Cache a true rounded clip
+        // inside the actual native background bounds and omit the extra outline
+        // whenever Samsung native blur is running.
+        if (value.lastRectW != bounds.width() || value.lastRectH != bounds.height()
+                || value.lastRectLeft != bounds.left || value.lastRectTop != bounds.top
+                || value.lastCorner != corner) {
             value.lastRectW = bounds.width();
             value.lastRectH = bounds.height();
+            value.lastRectLeft = bounds.left;
+            value.lastRectTop = bounds.top;
+            value.lastCorner = corner;
+            value.shape.reset();
+            value.shape.addRoundRect(left, top, right, bottom, corner, corner,
+                    Path.Direction.CW);
             value.sheen.setShader(new LinearGradient(
                     left, top, left, bottom,
-                    new int[]{0x18FFFFFF, 0x06FFFFFF, 0x00FFFFFF},
-                    new float[]{0f, 0.32f, 1f}, Shader.TileMode.CLAMP));
+                    new int[]{0x18FFFFFF, 0x08FFFFFF, 0x00FFFFFF},
+                    new float[]{0f, 0.28f, 1f}, Shader.TileMode.CLAMP));
             value.border.setShader(new LinearGradient(
                     left, top, left, bottom,
-                    new int[]{0x64FFFFFF, 0x26FFFFFF, 0x0BFFFFFF},
-                    new float[]{0f, 0.38f, 1f}, Shader.TileMode.CLAMP));
+                    new int[]{0x36FFFFFF, 0x13FFFFFF, 0x06FFFFFF},
+                    new float[]{0f, 0.40f, 1f}, Shader.TileMode.CLAMP));
         }
-        value.border.setStrokeWidth(edge);
-        // Unlike v0.4's View foreground, these highlights use the OEM drawable
-        // bounds and are clipped to the background card, not to the full row.
+        value.border.setStrokeWidth(Math.max(0.8f, edge * 0.7f));
         int save = canvas.save();
-        canvas.clipRect(bounds);
+        canvas.clipPath(value.shape);
         canvas.drawRoundRect(left, top, right, bottom, corner, corner, value.sheen);
-        canvas.drawRoundRect(left, top, right, bottom, corner, corner, value.border);
+        // Samsung's blur already provides a visual boundary. Drawing our own
+        // border on top causes a second, darker ring at high blur intensity.
+        if (!value.blurApplied) {
+            canvas.drawRoundRect(left, top, right, bottom, corner, corner,
+                    value.border);
+        }
         canvas.restoreToCount(save);
     }
 

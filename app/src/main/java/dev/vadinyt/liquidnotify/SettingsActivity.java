@@ -26,8 +26,8 @@ public final class SettingsActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private LinearLayout root;
     private TextView status;
-    private int opacity = 185;
-    private int blurPx = 88;
+    private int opacity = 105;
+    private int blurPx = 64;
     private int radius = 36;
     private int palette = 0;
     private boolean enabled = true;
@@ -81,7 +81,7 @@ public final class SettingsActivity extends Activity {
         TextView blurValue = label(blurPx + " px", 13, 0xFFA7B5CA);
         root.addView(blurValue);
         SeekBar blurBar = new SeekBar(this);
-        blurBar.setMax(120);
+        blurBar.setMax(80);
         blurBar.setProgress(blurPx);
         root.addView(blurBar);
         blurBar.setOnSeekBarChangeListener(seekListener(value -> {
@@ -121,9 +121,37 @@ public final class SettingsActivity extends Activity {
         });
 
         spacer(18);
+        root.addView(label("For visible frosted glass, use opacity 80–130 and blur 45–75 px.",
+                13, 0xFFA7B5CA));
+        spacer(12);
         status = label("Changes apply when notifications redraw.", 13, 0xFFA7B5CA);
         root.addView(status);
         spacer(12);
+        Button frosted = new Button(this);
+        frosted.setText("APPLY FROSTED GLASS PRESET");
+        root.addView(frosted);
+        frosted.setOnClickListener(v -> {
+            if (loading) return;
+            status.setText("Applying frosted glass preset...");
+            worker.execute(() -> {
+                boolean ok = hasRoot()
+                        && runRoot("settings put global liquidnotify_opacity 105")
+                        && runRoot("settings put global liquidnotify_blur_px 64")
+                        && runRoot("settings put global liquidnotify_radius_dp 38")
+                        && readRoot("liquidnotify_opacity", -1) == 105
+                        && readRoot("liquidnotify_blur_px", -1) == 64
+                        && readRoot("liquidnotify_radius_dp", -1) == 38;
+                runOnUiThread(() -> {
+                    if (ok) {
+                        load(toggle, alpha, alphaValue, blurBar, blurValue,
+                                corners, radiusValue, group);
+                    } else {
+                        status.setText("Could not apply preset. Check KernelSU permission.");
+                    }
+                });
+            });
+        });
+        spacer(8);
         Button grant = new Button(this);
         grant.setText("CHECK ROOT ACCESS");
         root.addView(grant);
@@ -177,15 +205,15 @@ public final class SettingsActivity extends Activity {
             boolean rootGranted = hasRoot();
             int[] values = new int[] {
                 readRoot("liquidnotify_enabled", 1),
-                readRoot("liquidnotify_opacity", 185),
-                readRoot("liquidnotify_blur_px", 88),
+                readRoot("liquidnotify_opacity", 105),
+                readRoot("liquidnotify_blur_px", 64),
                 readRoot("liquidnotify_radius_dp", 36),
                 readRoot("liquidnotify_palette", 0)
             };
             runOnUiThread(() -> {
                 enabled = values[0] == 1;
                 opacity = Math.max(35, Math.min(245, values[1]));
-                blurPx = Math.max(0, Math.min(120, values[2]));
+                blurPx = Math.max(0, Math.min(80, values[2]));
                 radius = Math.max(18, Math.min(48, values[3]));
                 palette = Math.max(0, Math.min(2, values[4]));
                 // Avoid issuing writes when initializing UI.
