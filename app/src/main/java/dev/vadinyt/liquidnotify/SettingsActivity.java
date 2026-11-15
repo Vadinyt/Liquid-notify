@@ -4,7 +4,6 @@ import android.app.Activity;
 import android.os.Bundle;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
 import android.widget.LinearLayout;
@@ -109,6 +108,16 @@ public final class SettingsActivity extends Activity {
         status = label("Changes apply when notifications redraw.", 13, 0xFFA7B5CA);
         root.addView(status);
         spacer(12);
+        Button grant = new Button(this);
+        grant.setText("CHECK ROOT ACCESS");
+        root.addView(grant);
+        grant.setOnClickListener(v -> worker.execute(() -> {
+            boolean ok = runRoot("id -u");
+            runOnUiThread(() -> status.setText(ok
+                    ? "Root command succeeded. Try saving a setting."
+                    : "Root unavailable or denied. Allow LiquidNotify in KernelSU."));
+        }));
+        spacer(8);
         Button refresh = new Button(this);
         refresh.setText("Reload saved values");
         root.addView(refresh);
@@ -137,7 +146,7 @@ public final class SettingsActivity extends Activity {
             boolean ok = runRoot("settings put global " + key + " " + value);
             runOnUiThread(() -> status.setText(ok
                     ? "Saved. Reopen the notification shade to preview."
-                    : "Root permission required. Grant access to LiquidNotify."));
+                    : "Could not save. Check KernelSU permission for LiquidNotify."));
         });
     }
 
@@ -181,7 +190,7 @@ public final class SettingsActivity extends Activity {
             Process p = new ProcessBuilder("su", "-c", "settings get global " + key).start();
             BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
             String line = reader.readLine();
-            if (p.waitFor() != 0) return fallback;
+            if (p.waitFor() != 0 || line == null) return fallback;
             return Integer.parseInt(line.trim());
         } catch (Exception e) { return fallback; }
     }
