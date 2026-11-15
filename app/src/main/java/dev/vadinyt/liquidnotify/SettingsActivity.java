@@ -27,6 +27,7 @@ public final class SettingsActivity extends Activity {
     private LinearLayout root;
     private TextView status;
     private int opacity = 185;
+    private int blurPx = 88;
     private int radius = 36;
     private int palette = 0;
     private boolean enabled = true;
@@ -48,7 +49,7 @@ public final class SettingsActivity extends Activity {
         TextView title = label("LiquidNotify", 28, 0xFFFFFFFF);
         title.setTypeface(null, Typeface.BOLD);
         root.addView(title);
-        root.addView(label("One UI 9 • Native notification styling", 13, 0xFFA7B5CA));
+        root.addView(label("One UI 9 • Samsung native glass experiment", 13, 0xFFA7B5CA));
         spacer(20);
 
         Switch toggle = new Switch(this);
@@ -74,6 +75,19 @@ public final class SettingsActivity extends Activity {
             opacity = 35 + value;
             alphaValue.setText(opacity + " / 255 (lower = more transparent)");
         }, () -> write("liquidnotify_opacity", opacity)));
+
+        spacer(20);
+        root.addView(label("Native blur strength", 18, Color.WHITE));
+        TextView blurValue = label(blurPx + " px", 13, 0xFFA7B5CA);
+        root.addView(blurValue);
+        SeekBar blurBar = new SeekBar(this);
+        blurBar.setMax(120);
+        blurBar.setProgress(blurPx);
+        root.addView(blurBar);
+        blurBar.setOnSeekBarChangeListener(seekListener(value -> {
+            blurPx = value;
+            blurValue.setText(blurPx + " px (0 = off)");
+        }, () -> write("liquidnotify_blur_px", blurPx)));
 
         spacer(20);
         root.addView(label("Corner radius", 18, Color.WHITE));
@@ -123,7 +137,7 @@ public final class SettingsActivity extends Activity {
         Button refresh = new Button(this);
         refresh.setText("Reload saved values");
         root.addView(refresh);
-        refresh.setOnClickListener(v -> load(toggle, alpha, alphaValue, corners, radiusValue, group));
+        refresh.setOnClickListener(v -> load(toggle, alpha, alphaValue, blurBar, blurValue, corners, radiusValue, group));
         load(toggle, alpha, alphaValue, corners, radiusValue, group);
     }
 
@@ -142,6 +156,7 @@ public final class SettingsActivity extends Activity {
         // Only allow known Settings.Global keys.
         if (!key.equals("liquidnotify_enabled")
                 && !key.equals("liquidnotify_opacity")
+                && !key.equals("liquidnotify_blur_px")
                 && !key.equals("liquidnotify_radius_dp")
                 && !key.equals("liquidnotify_palette")) return;
         if (loading) return;
@@ -155,6 +170,7 @@ public final class SettingsActivity extends Activity {
     }
 
     private void load(Switch toggle, SeekBar alpha, TextView alphaValue,
+                      SeekBar blurBar, TextView blurValue,
                       SeekBar corners, TextView radiusValue, RadioGroup group) {
         loading = true;
         worker.execute(() -> {
@@ -162,20 +178,24 @@ public final class SettingsActivity extends Activity {
             int[] values = new int[] {
                 readRoot("liquidnotify_enabled", 1),
                 readRoot("liquidnotify_opacity", 185),
+                readRoot("liquidnotify_blur_px", 88),
                 readRoot("liquidnotify_radius_dp", 36),
                 readRoot("liquidnotify_palette", 0)
             };
             runOnUiThread(() -> {
                 enabled = values[0] == 1;
                 opacity = Math.max(35, Math.min(245, values[1]));
-                radius = Math.max(18, Math.min(48, values[2]));
-                palette = Math.max(0, Math.min(2, values[3]));
+                blurPx = Math.max(0, Math.min(120, values[2]));
+                radius = Math.max(18, Math.min(48, values[3]));
+                palette = Math.max(0, Math.min(2, values[4]));
                 // Avoid issuing writes when initializing UI.
                 toggle.setOnCheckedChangeListener(null);
                 group.setOnCheckedChangeListener(null);
                 toggle.setChecked(enabled);
                 alpha.setProgress(opacity - 35);
                 alphaValue.setText(opacity + " / 255 (lower = more transparent)");
+                blurBar.setProgress(blurPx);
+                blurValue.setText(blurPx + " px (0 = off)");
                 corners.setProgress(radius - 18);
                 radiusValue.setText(radius + " dp");
                 group.check(100 + palette);
