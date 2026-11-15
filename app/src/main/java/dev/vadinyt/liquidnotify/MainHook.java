@@ -33,8 +33,8 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile long lastConfigLog = -1;
     private static volatile boolean enabled = true;
     private static volatile boolean radiusEnabled = true;
-    private static volatile int radiusDp = 36;
-    private static volatile int opacity = 185;
+    private static volatile int radiusDp = 44;
+    private static volatile int opacity = 85;
     private static volatile int palette = 0;
     private static volatile int blurPx = 40;
     private static volatile int liquidStrength = 80;
@@ -236,8 +236,8 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         enabled = readInt(context, "liquidnotify_enabled", 1, 0, 1) == 1;
                         radiusEnabled = readInt(context, "liquidnotify_radius_enabled", 1, 0, 1) == 1;
-                        radiusDp = readInt(context, "liquidnotify_radius_dp", 36, 18, 48);
-                        opacity = readInt(context, "liquidnotify_opacity", 185, 35, 245);
+                        radiusDp = readInt(context, "liquidnotify_radius_dp", 44, 18, 48);
+                        opacity = readInt(context, "liquidnotify_opacity", 85, 35, 245);
                         palette = readInt(context, "liquidnotify_palette", 0, 0, 2);
                         blurPx = readInt(context, "liquidnotify_blur_px", 40, 0, 80);
                         liquidStrength = readInt(context, "liquidnotify_liquid_strength", 80, 0, 100);
