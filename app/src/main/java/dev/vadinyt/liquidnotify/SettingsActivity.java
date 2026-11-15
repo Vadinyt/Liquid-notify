@@ -129,9 +129,6 @@ public final class SettingsActivity extends Activity {
         }, () -> write("liquidnotify_radius_dp", radius)));
 
         spacer(20);
-        root.addView(label("One clear Liquid Glass material. No color palettes.", 13,
-                0xFFA7B5CA));
-        spacer(12);
         root.addView(label("Clear Liquid Glass: reflections 90, opacity 76, blur 22.",
                 13, 0xFFA7B5CA));
         spacer(12);
@@ -153,8 +150,7 @@ public final class SettingsActivity extends Activity {
                         && readRoot("liquidnotify_opacity", -1) == 76
                         && readRoot("liquidnotify_blur_px", -1) == 22
                         && readRoot("liquidnotify_liquid_strength", -1) == 90
-                        && readRoot("liquidnotify_radius_dp", -1) == 44
-                        ;
+                        && readRoot("liquidnotify_radius_dp", -1) == 44;
                 runOnUiThread(() -> {
                     if (ok) {
                         load(toggle, alpha, alphaValue, blurBar, blurValue,
