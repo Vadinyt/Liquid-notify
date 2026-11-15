@@ -16,13 +16,34 @@ jobs:
           java-version: '17'
       - name: Install Android SDK packages
         run: |
-          yes | "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" --licenses || true
           "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - run: gradle :app:assembleDebug --stacktrace
+      - name: Verify release signing configuration
+        env:
+          KEYSTORE_BASE64: ${{ secrets.LIQUIDNOTIFY_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.LIQUIDNOTIFY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.LIQUIDNOTIFY_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.LIQUIDNOTIFY_KEY_PASSWORD }}
+        run: |
+          if [[ -z "$KEYSTORE_BASE64" || -z "$STORE_PASSWORD" || -z "$KEY_ALIAS" || -z "$KEY_PASSWORD" ]]; then
+            echo "::error::Missing signing secrets. See SIGNING.md. Refusing to publish an APK with a random debug certificate."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/liquidnotify-release.jks"
+          chmod 600 "$RUNNER_TEMP/liquidnotify-release.jks"
+      - name: Build signed upgradeable APK
+        env:
+          LIQUIDNOTIFY_KEYSTORE_PATH: ${{ runner.temp }}/liquidnotify-release.jks
+          LIQUIDNOTIFY_STORE_PASSWORD: ${{ secrets.LIQUIDNOTIFY_STORE_PASSWORD }}
+          LIQUIDNOTIFY_KEY_ALIAS: ${{ secrets.LIQUIDNOTIFY_KEY_ALIAS }}
+          LIQUIDNOTIFY_KEY_PASSWORD: ${{ secrets.LIQUIDNOTIFY_KEY_PASSWORD }}
+        run: gradle :app:assembleRelease --stacktrace
       - uses: actions/upload-artifact@v4
         with:
-          name: LiquidNotify-v0.3.0-experimental
-          path: app/build/outputs/apk/debug/*.apk
+          name: LiquidNotify-signed-upgradeable
+          path: app/build/outputs/apk/release/*.apk
+      - name: Delete temporary keystore
+        if: always()
+        run: rm -f "$RUNNER_TEMP/liquidnotify-release.jks"
