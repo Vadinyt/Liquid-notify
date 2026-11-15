@@ -10,7 +10,7 @@ android {
         targetSdk = 35
         // GitHub Actions increments this automatically, preserving Android upgrade ordering.
         versionCode = (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 3) + 100
-        versionName = "0.5.0-native-glass"
+        versionName = "0.6.0-glass-controls"
     }
 
     signingConfigs {
