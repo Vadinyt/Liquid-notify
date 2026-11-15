@@ -357,6 +357,16 @@ final class GlassRenderer {
                 && Math.abs(bounds.bottom - height) <= 2;
     }
 
+    private static int glassColor(int palette, int alpha) {
+        int red, green, blue;
+        switch (palette) {
+            case 1: red = 94; green = 104; blue = 120; break;
+            case 2: red = 125; green = 89; blue = 164; break;
+            default: red = 78; green = 119; blue = 163; break;
+        }
+        return Color.argb(Math.max(0, Math.min(255, alpha)), red, green, blue);
+    }
+
     private static synchronized boolean ensureBlurApi() {
         if (blurApiState != 0) return blurApiState == 1;
         if (!"samsung".equalsIgnoreCase(Build.MANUFACTURER)) {
