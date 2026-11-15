@@ -3,6 +3,7 @@ package dev.vadinyt.liquidnotify;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.LinearGradient;
+import android.graphics.Outline;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.Rect;
@@ -10,6 +11,7 @@ import android.graphics.Shader;
 import android.graphics.drawable.Drawable;
 import android.os.Build;
 import android.view.View;
+import android.view.ViewOutlineProvider;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
@@ -30,6 +32,10 @@ final class GlassRenderer {
     private static final WeakHashMap<View, State> STATES = new WeakHashMap<>();
     private static Field backgroundField;
     private static Field originalAlphaField;
+    private static Field clipTopField;
+    private static Field clipBottomField;
+    private static Field actualHeightField;
+    private static Field expandingField;
     private static boolean fieldsResolved;
     private static volatile int blurApiState; // 0 unknown, 1 available, -1 missing
     private static Constructor<?> blurBuilder;
@@ -45,6 +51,11 @@ final class GlassRenderer {
     private static final class State {
         boolean blurApplied;
         boolean blurFailed;
+        boolean outlineInstalled;
+        boolean previousClipToOutline;
+        ViewOutlineProvider previousOutlineProvider;
+        float outlineRadius;
+        final Rect outlineRect = new Rect();
         int blurRadius = -1;
         float cornerRadius = -1f;
         int lastAlpha = -1;
@@ -90,6 +101,10 @@ final class GlassRenderer {
         if (fieldsResolved) return;
         backgroundField = findField(view.getClass(), "mBackground");
         originalAlphaField = findField(view.getClass(), "mDrawableAlpha");
+        clipTopField = findField(view.getClass(), "mClipTopAmount");
+        clipBottomField = findField(view.getClass(), "mClipBottomAmount");
+        actualHeightField = findField(view.getClass(), "mActualHeight");
+        expandingField = findField(view.getClass(), "mExpandAnimationRunning");
         fieldsResolved = true;
         if (backgroundField == null && !loggedMissing) {
             loggedMissing = true;
@@ -156,6 +171,7 @@ final class GlassRenderer {
                             cornerRadiusPx, cornerRadiusPx);
                     apply.invoke(view, build.invoke(builder));
                     value.blurApplied = true;
+                    installOutline(view, value, cornerRadiusPx);
                     value.blurRadius = blurRadiusPx;
                     value.cornerRadius = cornerRadiusPx;
                     if (!loggedNative) {
@@ -193,6 +209,9 @@ final class GlassRenderer {
         Rect bounds = drawable.getBounds();
         if (bounds.width() < 12 || bounds.height() < 12) return;
         State value = state(view);
+        if (value.blurApplied) {
+            refreshOutline(view, value, bounds, cornerRadiusPx);
+        }
         float edge = Math.max(1f, view.getResources().getDisplayMetrics().density * 0.9f);
         float left = bounds.left + edge;
         float top = bounds.top + edge;
@@ -218,7 +237,7 @@ final class GlassRenderer {
                     Path.Direction.CW);
             value.sheen.setShader(new LinearGradient(
                     left, top, left, bottom,
-                    new int[]{0x18FFFFFF, 0x08FFFFFF, 0x00FFFFFF},
+                    new int[]{0x2EFFFFFF, 0x19FFFFFF, 0x07FFFFFF},
                     new float[]{0f, 0.28f, 1f}, Shader.TileMode.CLAMP));
             value.border.setShader(new LinearGradient(
                     left, top, left, bottom,
@@ -236,6 +255,72 @@ final class GlassRenderer {
                     value.border);
         }
         canvas.restoreToCount(save);
+    }
+
+    /**
+     * Samsung's SemBlurInfo is attached to the View render node, but the
+     * notification drawable often occupies only part of that View. Clip the
+     * render node to the actual drawable rectangle to avoid blur crescents.
+     */
+    private static void installOutline(View view, State state, float radius) {
+        if (!state.outlineInstalled) {
+            state.previousOutlineProvider = view.getOutlineProvider();
+            state.previousClipToOutline = view.getClipToOutline();
+            state.outlineRect.set(0, 0, Math.max(1, view.getWidth()),
+                    Math.max(1, view.getHeight()));
+            state.outlineRadius = radius;
+            view.setOutlineProvider(new ViewOutlineProvider() {
+                @Override public void getOutline(View target, Outline outline) {
+                    Rect rect = state.outlineRect;
+                    float r = Math.max(0f, Math.min(state.outlineRadius,
+                            Math.min(rect.width(), rect.height()) * 0.5f));
+                    if (rect.width() > 0 && rect.height() > 0) {
+                        outline.setRoundRect(rect, r);
+                        outline.setAlpha(1f);
+                    } else {
+                        outline.setEmpty();
+                    }
+                }
+            });
+            view.setClipToOutline(true);
+            state.outlineInstalled = true;
+            view.invalidateOutline();
+        } else if (Math.abs(state.outlineRadius - radius) > .5f) {
+            state.outlineRadius = radius;
+            view.invalidateOutline();
+        }
+    }
+
+    private static int intField(View view, Field field, int fallback) {
+        if (field == null) return fallback;
+        try { return field.getInt(view); }
+        catch (Throwable ignored) { return fallback; }
+    }
+
+    private static boolean boolField(View view, Field field) {
+        if (field == null) return false;
+        try { return field.getBoolean(view); }
+        catch (Throwable ignored) { return false; }
+    }
+
+    private static void refreshOutline(View view, State state, Rect bounds, float corner) {
+        if (!state.outlineInstalled) return;
+        Rect area = new Rect(bounds);
+        if (!boolField(view, expandingField)) {
+            int topClip = Math.max(0, intField(view, clipTopField, 0));
+            int bottomClip = Math.max(0, intField(view, clipBottomField, 0));
+            int actualHeight = intField(view, actualHeightField, view.getHeight());
+            if (actualHeight <= 0) actualHeight = view.getHeight();
+            area.top = Math.max(area.top, topClip);
+            area.bottom = Math.min(area.bottom, actualHeight - bottomClip);
+        }
+        area.intersect(0, 0, view.getWidth(), view.getHeight());
+        if (area.isEmpty()) return;
+        if (!state.outlineRect.equals(area) || Math.abs(state.outlineRadius - corner) > .5f) {
+            state.outlineRect.set(area);
+            state.outlineRadius = corner;
+            view.invalidateOutline();
+        }
     }
 
     private static synchronized boolean ensureBlurApi() {
@@ -264,12 +349,22 @@ final class GlassRenderer {
     }
 
     private static void clearBlur(View view, State value) {
-        if (!value.blurApplied) return;
-        value.blurApplied = false;
-        value.blurRadius = -1;
-        try {
-            if (apply != null) apply.invoke(view, new Object[]{null});
-        } catch (Throwable ignored) {
+        if (value.blurApplied) {
+            value.blurApplied = false;
+            value.blurRadius = -1;
+            try {
+                if (apply != null) apply.invoke(view, new Object[]{null});
+            } catch (Throwable ignored) {
+            }
+        }
+        if (value.outlineInstalled) {
+            value.outlineInstalled = false;
+            try {
+                view.setOutlineProvider(value.previousOutlineProvider);
+                view.setClipToOutline(value.previousClipToOutline);
+                view.invalidateOutline();
+            } catch (Throwable ignored) {
+            }
         }
     }
 

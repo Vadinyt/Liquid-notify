@@ -26,8 +26,8 @@ public final class SettingsActivity extends Activity {
     private final ExecutorService worker = Executors.newSingleThreadExecutor();
     private LinearLayout root;
     private TextView status;
-    private int opacity = 105;
-    private int blurPx = 64;
+    private int opacity = 112;
+    private int blurPx = 54;
     private int radius = 36;
     private int palette = 0;
     private boolean enabled = true;
@@ -121,7 +121,7 @@ public final class SettingsActivity extends Activity {
         });
 
         spacer(18);
-        root.addView(label("For visible frosted glass, use opacity 80–130 and blur 45–75 px.",
+        root.addView(label("Recommended: opacity 100–130 and blur 40–65 px.",
                 13, 0xFFA7B5CA));
         spacer(12);
         status = label("Changes apply when notifications redraw.", 13, 0xFFA7B5CA);
@@ -135,11 +135,11 @@ public final class SettingsActivity extends Activity {
             status.setText("Applying frosted glass preset...");
             worker.execute(() -> {
                 boolean ok = hasRoot()
-                        && runRoot("settings put global liquidnotify_opacity 105")
-                        && runRoot("settings put global liquidnotify_blur_px 64")
+                        && runRoot("settings put global liquidnotify_opacity 112")
+                        && runRoot("settings put global liquidnotify_blur_px 54")
                         && runRoot("settings put global liquidnotify_radius_dp 38")
-                        && readRoot("liquidnotify_opacity", -1) == 105
-                        && readRoot("liquidnotify_blur_px", -1) == 64
+                        && readRoot("liquidnotify_opacity", -1) == 112
+                        && readRoot("liquidnotify_blur_px", -1) == 54
                         && readRoot("liquidnotify_radius_dp", -1) == 38;
                 runOnUiThread(() -> {
                     if (ok) {
@@ -205,8 +205,8 @@ public final class SettingsActivity extends Activity {
             boolean rootGranted = hasRoot();
             int[] values = new int[] {
                 readRoot("liquidnotify_enabled", 1),
-                readRoot("liquidnotify_opacity", 105),
-                readRoot("liquidnotify_blur_px", 64),
+                readRoot("liquidnotify_opacity", 112),
+                readRoot("liquidnotify_blur_px", 54),
                 readRoot("liquidnotify_radius_dp", 36),
                 readRoot("liquidnotify_palette", 0)
             };

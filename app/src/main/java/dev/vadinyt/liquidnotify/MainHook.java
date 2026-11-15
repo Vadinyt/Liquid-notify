@@ -9,6 +9,8 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.TypedValue;
 import android.view.View;
+import java.util.Locale;
+import java.util.WeakHashMap;
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.XC_MethodHook;
 import de.robv.android.xposed.XposedBridge;
@@ -36,6 +38,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     private static volatile boolean loggedRadius;
     private static volatile boolean loggedTint;
     private static volatile int lastLoggedSignature = Integer.MIN_VALUE;
+    private static final WeakHashMap<View, Boolean> DIMMED_CACHE = new WeakHashMap<>();
 
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
@@ -48,7 +51,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        if (!shouldStyle(view) || !radiusEnabled) return;
+                        if (!shouldStyle(view) || !radiusEnabled || isDimmed(view)) return;
                         float radius = dp(view, radiusDp);
                         // Apply the requested radius, including smaller values.
                         p.args[0] = radius;
@@ -69,7 +72,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        if (!shouldStyle(view) || !colorEnabled) return;
+                        if (!shouldStyle(view) || !colorEnabled || isDimmed(view)) return;
                         int base = baseColor(isNight(view), palette);
                         // IMPORTANT: apply opacity only once. Older releases made both
                         // the tint and the drawable translucent, multiplying alpha.
@@ -104,7 +107,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        boolean active = shouldStyle(view) && colorEnabled;
+                        boolean active = shouldStyle(view) && colorEnabled && !isDimmed(view);
                         GlassRenderer.beforeDraw(view, active, opacity, blurPx,
                                 dp(view, radiusDp));
                     } catch (Throwable t) {
@@ -116,7 +119,7 @@ public final class MainHook implements IXposedHookLoadPackage {
                     try {
                         if (!(p.thisObject instanceof View)) return;
                         View view = (View) p.thisObject;
-                        boolean active = shouldStyle(view) && colorEnabled;
+                        boolean active = shouldStyle(view) && colorEnabled && !isDimmed(view);
                         GlassRenderer.afterDraw(view, (Canvas) p.args[0],
                                 active, dp(view, radiusDp));
                     } catch (Throwable t) {
@@ -131,11 +134,30 @@ public final class MainHook implements IXposedHookLoadPackage {
         XposedBridge.log(TAG + ": v0.10 hooks registered");
     }
 
+    private static boolean isDimmed(View view) {
+        synchronized (DIMMED_CACHE) {
+            Boolean cached = DIMMED_CACHE.get(view);
+            if (cached != null) return cached;
+            boolean dimmed = false;
+            try {
+                if (view.getId() != View.NO_ID) {
+                    String id = view.getResources().getResourceEntryName(view.getId());
+                    dimmed = id.toLowerCase(Locale.ROOT).contains("dimmed");
+                }
+            } catch (Throwable ignored) {
+                // Samsung may rename this OEM resource. Leave it eligible
+                // rather than hiding any background when identification fails.
+            }
+            DIMMED_CACHE.put(view, dimmed);
+            return dimmed;
+        }
+    }
+
     private static int baseColor(boolean night, int selected) {
         switch (selected) {
-            case 1: return night ? 0xFF282B34 : 0xFF434852; // graphite
-            case 2: return night ? 0xFF302B45 : 0xFF55476D; // violet
-            default: return night ? 0xFF303A50 : 0xFF43546C; // icy blue
+            case 1: return night ? 0xFF464A58 : 0xFF535B68; // brighter graphite
+            case 2: return night ? 0xFF51456C : 0xFF655478; // soft violet
+            default: return night ? 0xFF485D77 : 0xFF60758D; // mist blue
         }
     }
 
