@@ -66,12 +66,12 @@ public final class SettingsActivity extends Activity {
         TextView alphaValue = label("", 13, 0xFFA7B5CA);
         root.addView(alphaValue);
         SeekBar alpha = new SeekBar(this);
-        alpha.setMax(120);
-        alpha.setProgress(opacity - 125);
+        alpha.setMax(210);
+        alpha.setProgress(opacity - 35);
         alphaValue.setText(opacity + " / 255 (lower = more transparent)");
         root.addView(alpha);
         alpha.setOnSeekBarChangeListener(seekListener(value -> {
-            opacity = 125 + value;
+            opacity = 35 + value;
             alphaValue.setText(opacity + " / 255 (lower = more transparent)");
         }, () -> write("liquidnotify_opacity", opacity)));
 
@@ -167,14 +167,14 @@ public final class SettingsActivity extends Activity {
             };
             runOnUiThread(() -> {
                 enabled = values[0] == 1;
-                opacity = Math.max(125, Math.min(245, values[1]));
+                opacity = Math.max(35, Math.min(245, values[1]));
                 radius = Math.max(18, Math.min(48, values[2]));
                 palette = Math.max(0, Math.min(2, values[3]));
                 // Avoid issuing writes when initializing UI.
                 toggle.setOnCheckedChangeListener(null);
                 group.setOnCheckedChangeListener(null);
                 toggle.setChecked(enabled);
-                alpha.setProgress(opacity - 125);
+                alpha.setProgress(opacity - 35);
                 alphaValue.setText(opacity + " / 255 (lower = more transparent)");
                 corners.setProgress(radius - 18);
                 radiusValue.setText(radius + " dp");
