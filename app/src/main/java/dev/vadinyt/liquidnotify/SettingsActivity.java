@@ -14,6 +14,7 @@ import android.widget.Switch;
 import android.widget.TextView;
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
+import java.io.IOException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -29,6 +30,7 @@ public final class SettingsActivity extends Activity {
     private int radius = 36;
     private int palette = 0;
     private boolean enabled = true;
+    private volatile boolean loading = true;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -112,9 +114,9 @@ public final class SettingsActivity extends Activity {
         grant.setText("CHECK ROOT ACCESS");
         root.addView(grant);
         grant.setOnClickListener(v -> worker.execute(() -> {
-            boolean ok = runRoot("id -u");
+            boolean ok = hasRoot();
             runOnUiThread(() -> status.setText(ok
-                    ? "Root command succeeded. Try saving a setting."
+                    ? "Root access confirmed (uid 0). Try saving a setting."
                     : "Root unavailable or denied. Allow LiquidNotify in KernelSU."));
         }));
         spacer(8);
@@ -142,8 +144,10 @@ public final class SettingsActivity extends Activity {
                 && !key.equals("liquidnotify_opacity")
                 && !key.equals("liquidnotify_radius_dp")
                 && !key.equals("liquidnotify_palette")) return;
+        if (loading) return;
         worker.execute(() -> {
-            boolean ok = runRoot("settings put global " + key + " " + value);
+            boolean ok = hasRoot() && runRoot("settings put global " + key + " " + value)
+                    && readRoot(key, Integer.MIN_VALUE) == value;
             runOnUiThread(() -> status.setText(ok
                     ? "Saved. Reopen the notification shade to preview."
                     : "Could not save. Check KernelSU permission for LiquidNotify."));
@@ -152,7 +156,9 @@ public final class SettingsActivity extends Activity {
 
     private void load(Switch toggle, SeekBar alpha, TextView alphaValue,
                       SeekBar corners, TextView radiusValue, RadioGroup group) {
+        loading = true;
         worker.execute(() -> {
+            boolean rootGranted = hasRoot();
             int[] values = new int[] {
                 readRoot("liquidnotify_enabled", 1),
                 readRoot("liquidnotify_opacity", 185),
@@ -173,6 +179,8 @@ public final class SettingsActivity extends Activity {
                 corners.setProgress(radius - 18);
                 radiusValue.setText(radius + " dp");
                 group.check(100 + palette);
+                loading = false;
+                status.setText(rootGranted ? "Settings loaded. Adjust a control to save." : "Root unavailable. Grant LiquidNotify access in KernelSU.");
                 toggle.setOnCheckedChangeListener((button, checked) -> {
                     enabled = checked;
                     write("liquidnotify_enabled", checked ? 1 : 0);
@@ -193,6 +201,15 @@ public final class SettingsActivity extends Activity {
             if (p.waitFor() != 0 || line == null) return fallback;
             return Integer.parseInt(line.trim());
         } catch (Exception e) { return fallback; }
+    }
+
+    private boolean hasRoot() {
+        try {
+            Process p = new ProcessBuilder("su", "-c", "id -u").start();
+            BufferedReader reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+            String uid = reader.readLine();
+            return p.waitFor() == 0 && "0".equals(uid == null ? "" : uid.trim());
+        } catch (Exception e) { return false; }
     }
 
     private boolean runRoot(String command) {
