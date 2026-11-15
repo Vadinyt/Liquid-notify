@@ -48,9 +48,9 @@ public final class MainHook implements IXposedHookLoadPackage {
                         View view = (View) p.thisObject;
                         if (!shouldStyle(view) || !radiusEnabled) return;
                         float radius = dp(view, radiusDp);
-                        // Never shrink the OEM radius; keep Samsung's clipping semantics.
-                        p.args[0] = Math.max(((Number) p.args[0]).floatValue(), radius);
-                        p.args[1] = Math.max(((Number) p.args[1]).floatValue(), radius);
+                        // Apply the requested radius, including smaller values.
+                        p.args[0] = radius;
+                        p.args[1] = radius;
                         view.invalidate();
                         if (!loggedRadius) {
                             loggedRadius = true;
