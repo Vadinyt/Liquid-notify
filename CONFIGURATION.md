@@ -1,4 +1,4 @@
-# LiquidNotify v0.13.0: Consistent glass opacity
+# LiquidNotify v0.14.0: Stable notification geometry
 
 LiquidNotify modifies Samsung's existing notification background views in `com.android.systemui`. It does not replace the notification center or intercept notifications, gestures, expansion, or dismissal.
 
@@ -67,3 +67,11 @@ The dimmed-background detection uses the Android resource entry name; OEM builds
 - Native Samsung blur's background tint is recalculated with palette and opacity, and blur information is refreshed when the tint changes.
 - Setting opacity to 35 should produce a substantially lighter/more transparent surface than 245 on One UI 9. The native blur region remains beneath the background drawable.
 - `saveLayerAlpha` can add GPU compositing work; performance on-device needs verification. If SystemUI slows down, disable LiquidNotify in LSPosed and restart.
+
+## v0.14: native blur geometry stability
+
+Samsung's NotificationBackgroundView changes mActualHeight and its drawable bounds independently from the View dimensions during expansions, transitions, and clipping. The previous v0.11 ViewOutlineProvider + clipToOutline was clipping the render node and causing squared-off notification bottoms and purple crescents.
+
+This version removes the custom View outline entirely. Native SemBlurInfo blur is only applied when the OEM background drawable fills the measured View with no clip top/bottom and no expansion animation. When the bounds disagree, it removes native blur and lets Samsung render the row normally, keeping the tint and opacity effects. Decorative highlight painting is also skipped on transient mismatched geometry. No other applications or keyboard hooks are changed.
+
+**Trade-off:** Individual native blur is intentionally absent during some expanded or clipped notification states, because these cannot be safely rounded independently with the current OEM API. Future changes should use device-specific SystemUI class evidence rather than applying an extra global outline.

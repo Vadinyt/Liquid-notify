@@ -87,7 +87,7 @@ public final class MainHook implements IXposedHookLoadPackage {
     @Override public void handleLoadPackage(XC_LoadPackage.LoadPackageParam param) {
         if (!"com.android.systemui".equals(param.packageName)
                 || !"com.android.systemui".equals(param.processName)) return;
-        XposedBridge.log(TAG + ": v0.13 Samsung native glass renderer");
+        XposedBridge.log(TAG + ": v0.14 Samsung native glass renderer");
         try {
             XposedHelpers.findAndHookMethod(BACKGROUND, param.classLoader,
                     "setRadius", float.class, float.class, new XC_MethodHook() {
@@ -176,11 +176,11 @@ public final class MainHook implements IXposedHookLoadPackage {
                     }
                 }
             });
-            XposedBridge.log(TAG + ": v0.13 glass draw hooks registered");
+            XposedBridge.log(TAG + ": v0.14 glass draw hooks registered");
         } catch (Throwable t) {
             XposedBridge.log(TAG + ": glass draw hook registration failed " + t);
         }
-        XposedBridge.log(TAG + ": v0.13 hooks registered");
+        XposedBridge.log(TAG + ": v0.14 hooks registered");
     }
 
     private static boolean isDimmed(View view) {
