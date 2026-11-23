@@ -1,5 +1,6 @@
 package dev.vadinyt.liquidshade;
 
+import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Rect;
 import android.graphics.RectF;
@@ -23,14 +24,18 @@ final class CompositorBlur {
   private final Rect previous = new Rect();
   private float previousTop = -1, previousBottom = -1;
 
-  static boolean enabled(View view) {
-    if (view == null) return false;
+  static boolean enabled(Context context) {
+    if (context == null) return false;
     try {
-      WindowManager manager = view.getContext().getSystemService(WindowManager.class);
+      WindowManager manager = context.getSystemService(WindowManager.class);
       return manager != null && manager.isCrossWindowBlurEnabled();
     } catch (RuntimeException | LinkageError unavailable) {
       return false;
     }
+  }
+
+  static boolean enabled(View view) {
+    return view != null && enabled(view.getContext());
   }
 
   private boolean initialize(View view) throws ReflectiveOperationException {

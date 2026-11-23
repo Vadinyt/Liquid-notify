@@ -234,13 +234,15 @@ final class ShadeRuntime
           data.putInt("motionEvents", motionEvents);
           data.putInt("rowFrames", submittedFrames);
           data.putInt("settingsDigest", loaded ? cfg.signature() : 0);
-          data.putBoolean("crossWindowBlur", CompositorBlur.enabled(stage.get()));
+          // Read the system capability directly: the weak shade view may be absent when
+          // settings opens, which must not be misreported as disabled window blur.
+          data.putBoolean("crossWindowBlur", CompositorBlur.enabled(app));
           if (cfg.on(LOGGING)
               && diagnostic != null
               && SystemClock.elapsedRealtime() - lastLog > 1800) {
             lastLog = SystemClock.elapsedRealtime();
             diagnostic.accept(
-                "1.7.0 source="
+                "1.7.1 source="
                     + sourceLast
                     + " card="
                     + cardBackend
