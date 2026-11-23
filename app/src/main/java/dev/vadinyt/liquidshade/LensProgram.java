@@ -140,7 +140,12 @@ half4 main(float2 point) {
     float bouncePos=bevel*(.22+.13*(1.0-facingArc));
     float bounce=exp(-abs(inset-bouncePos)/max(.65,surface.w*(.35+.27*optic.z)));
     float caustic=finish.w*(.11+.44*lensPower)*contour*bounce*(fill+.32*key);
-    shine=clamp(shine+shoulder+caustic,0.0,.77);
+    // A thin inner highlight makes clear glass readable on a uniform dark shade.
+    // The crest occupies only a few pixels and does not recreate an opaque gray bezel.
+    float crestDepth=max(2.0*surface.w,bevel*.23);
+    float crest=exp(-abs(inset-crestDepth)/max(1.0*surface.w,bevel*.14));
+    float innerLight=finish.z*(.25+.20*lensPower)*crest*(.42+.80*key);
+    shine=clamp(shine+shoulder+caustic+innerLight,0.0,.77);
     shadow+=finish.w*.052*band*(1.0-band)*pow(1.0-facingArc,2.0);
     float tintA=tone.z;
     float3 tintRGB=mix(float3(dot(accent.rgb,float3(.2126,.7152,.0722))),accent.rgb,tone.x+tone.y*.35);
