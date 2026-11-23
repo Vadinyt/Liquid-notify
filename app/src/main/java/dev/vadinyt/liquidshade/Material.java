@@ -28,6 +28,7 @@ final class Material extends GradientDrawable {
   boolean grouped, darkText, edgeOnly, allowTexture = true, shaderFailed;
   int artwork;
   boolean useLiveBackdrop;
+  boolean useNativeCompositor;
   private WeakReference<android.widget.ImageView> mediaImage;
 
   void setMediaImage(android.widget.ImageView v) {
@@ -65,7 +66,8 @@ final class Material extends GradientDrawable {
   }
 
   Events events;
-  static final int CANVAS = 1, SURFACE = 2, TEXTURE = 3, ARTWORK = 4, LIVE = 5;
+  static final int CANVAS = 1, SURFACE = 2, TEXTURE = 3, ARTWORK = 4, LIVE = 5,
+      COMPOSITOR = 6;
   private int lastBackend;
 
   private void rendered(int backend) {
@@ -85,6 +87,7 @@ final class Material extends GradientDrawable {
   private BitmapShader sampler;
   private RuntimeShader program;
   private final LiveBackdrop live = new LiveBackdrop();
+  private final CompositorBlur compositor = new CompositorBlur();
   private Shader highlightGradient, shadeGradient;
   private int shadeHeight, shadeDim, shadeEnd;
   private int gradientWidth, gradientHeight, gradientColor, gradientAlpha;
@@ -331,6 +334,7 @@ final class Material extends GradientDrawable {
   }
 
   void suspend() {
+    compositor.stop();
     live.release();
     if (rowMotion != null) rowMotion.clear();
     tickHasRow = false;
@@ -343,6 +347,7 @@ final class Material extends GradientDrawable {
 
   void release() {
     suspend();
+    compositor.release();
     if (spring != null) spring.cancel();
     bound = coarseBound = null;
     blur.fine = blur.coarse = null;
@@ -514,8 +519,20 @@ final class Material extends GradientDrawable {
             : null;
     if (media && edgeOnly) bitmap = album;
     boolean hasImage = bitmap != null;
-    // This node only sees earlier content in this HWUI target. Other windows stay in Samsung's
-    // compositor.
+    // Cross-window blur runs in SurfaceFlinger, and can see windows that AGSL cannot.
+    // Only install it for normal notification cards with an opaque-free backing.
+    boolean compositorSubmitted =
+        card
+            && useNativeCompositor
+            && !hasImage
+            && !edgeOnly
+            && mode != 2
+            && compositor.draw(
+                v, canvas, box, top, bottom,
+                cfg.get(BLUR) == 0 ? 0
+                    : Math.round(dp * (8 + 66 * cfg.unit(BLUR))));
+    if (!compositorSubmitted) compositor.stop();
+    // The other shader only sees earlier content in this HWUI render target.
     boolean liveSubmitted = false;
     float bevel = Math.min(limit, dp * (2f + 23 * cfg.unit(BEVEL)) * (.8f + .6f * cfg.unit(DEPTH)));
     float displacement =
@@ -523,7 +540,7 @@ final class Material extends GradientDrawable {
             ? 0
             : dp * (3 + 25 * cfg.unit(DEPTH)) * cfg.unit(media ? MEDIA_REFRACTION : REFRACTION);
     if (hasImage || !field || useLiveBackdrop) positionChanged();
-    if (!hasImage && useLiveBackdrop && !edgeOnly && mode != 2 && mapped) {
+    if (!hasImage && !compositorSubmitted && useLiveBackdrop && !edgeOnly && mode != 2 && mapped) {
       float savedTop = box.top;
       if (field) box.top = Math.max(box.top, headerBottom);
       // Keep the local pixel mapping exact during clipping, scale and rotation transitions.
@@ -661,14 +678,15 @@ final class Material extends GradientDrawable {
         paint.setColor(Color.WHITE);
         paint.setShader(program);
         canvas.drawRect(box, paint);
-        rendered(album != null ? ARTWORK : hasImage ? TEXTURE : liveSubmitted ? LIVE : SURFACE);
+        rendered(album != null ? ARTWORK : hasImage ? TEXTURE :
+            compositorSubmitted ? COMPOSITOR : liveSubmitted ? LIVE : SURFACE);
         return;
       } catch (RuntimeException | OutOfMemoryError e) {
         shaderFailed = true;
         release();
       }
     }
-    rendered(liveSubmitted ? LIVE : CANVAS);
+    rendered(compositorSubmitted ? COMPOSITOR : liveSubmitted ? LIVE : CANVAS);
     // Native transparency preserves Samsung's existing compositor blur where available.
     paint.setShader(null);
     paint.setStyle(Paint.Style.FILL);

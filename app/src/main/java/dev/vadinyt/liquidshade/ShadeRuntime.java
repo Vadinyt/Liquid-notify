@@ -234,12 +234,13 @@ final class ShadeRuntime
           data.putInt("motionEvents", motionEvents);
           data.putInt("rowFrames", submittedFrames);
           data.putInt("settingsDigest", loaded ? cfg.signature() : 0);
+          data.putBoolean("crossWindowBlur", CompositorBlur.enabled(stage.get()));
           if (cfg.on(LOGGING)
               && diagnostic != null
               && SystemClock.elapsedRealtime() - lastLog > 1800) {
             lastLog = SystemClock.elapsedRealtime();
             diagnostic.accept(
-                "1.5.1 source="
+                "1.7.0 source="
                     + sourceLast
                     + " card="
                     + cardBackend
@@ -737,6 +738,7 @@ final class ShadeRuntime
       b.idle = null;
       glass.events = this;
       glass.useLiveBackdrop = true;
+      glass.useNativeCompositor = b.kind == CARD;
       glass.configure(cfg);
       if (layer != null) {
         Drawable orig = layer.getDrawable(0);

@@ -79,6 +79,7 @@ public final class Bridge extends ContentProvider {
           .putInt("lastMounted", in.getInt("lastMounted"))
           .putInt("source", in.getInt("source"))
           .putInt("settingsDigest", in.getInt("settingsDigest"))
+          .putBoolean("crossWindowBlur", in.getBoolean("crossWindowBlur"))
           .putLong("stamp", SystemClock.elapsedRealtime())
           .apply();
       c.getContentResolver().notifyChange(STATUS, null);

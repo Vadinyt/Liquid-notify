@@ -122,4 +122,7 @@
     <string name="preview_demo_mode">Démo optique · réfraction sur image · toucher pour la simulation</string>
     <string name="preview_photo_mode">Aperçu : image sélectionnée (réfraction réelle)</string>
     <string name="settings_sync">Réglages synchronisés avec SystemUI</string>
+    <string name="window_blur_status">Flou Android entre fenêtres disponible</string>
+    <string name="window_blur_disabled">Flou natif désactivé : pas de réfraction réelle sans image. Vérifier les réglages du système et les autres modules de notifications.</string>
+    <string name="backend_compositor">Flou natif par région (soumis au compositeur)</string>
 </resources>

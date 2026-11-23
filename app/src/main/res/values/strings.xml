@@ -122,4 +122,7 @@
     <string name="preview_demo_mode">Optical demo · image-backed refraction · tap for shade simulation</string>
     <string name="preview_photo_mode">Preview: selected image (image refraction)</string>
     <string name="settings_sync">Settings synchronized with SystemUI</string>
+    <string name="window_blur_status">Android cross-window blur available</string>
+    <string name="window_blur_disabled">Live compositor blur is disabled; image-free refraction remains unavailable. Check system blur settings and other notification styling modules.</string>
+    <string name="backend_compositor">Native compositor blur region (submitted)</string>
 </resources>

@@ -13,5 +13,5 @@ if ! grep -q 'LIQUIDSHADE_DEVICE_PASS' <<< "$result"; then
 fi
 
 mkdir -p dist
-adb exec-out run-as dev.vadinyt.liquidshade cat cache/liquidshade-native.png > dist/LiquidShade-1.6.0-native.png
-test -s dist/LiquidShade-1.6.0-native.png
+adb exec-out run-as dev.vadinyt.liquidshade cat cache/liquidshade-native.png > dist/LiquidShade-1.7.0-native.png
+test -s dist/LiquidShade-1.7.0-native.png

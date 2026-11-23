@@ -506,6 +506,11 @@ public final class SettingsActivity extends Activity {
           "\n" + getString(R.string.last_media) + "  ·  " + backend(p.getInt("mediaBackend", 0));
       state += "\n" + getString(R.string.impulses) + "  ·  " + p.getInt("motionEvents", 0);
       state += "\n" + getString(R.string.row_frames) + "  ·  " + p.getInt("rowFrames", 0);
+      state +=
+          "\n" + getString(R.string.window_blur_status) + "  ·  "
+              + getString(p.getBoolean("crossWindowBlur", false) ? R.string.yes : R.string.no);
+      if (!p.getBoolean("crossWindowBlur", false))
+        state += "\n" + getString(R.string.window_blur_disabled);
       int applied = p.getInt("settingsDigest", 0);
       state +=
           "\n"
@@ -528,6 +533,7 @@ public final class SettingsActivity extends Activity {
         switch (code) {
           case Material.CANVAS -> R.string.backend_canvas;
           case Material.LIVE -> R.string.backend_live;
+          case Material.COMPOSITOR -> R.string.backend_compositor;
           case Material.SURFACE -> R.string.backend_surface;
           case Material.TEXTURE -> R.string.backend_texture;
           case Material.ARTWORK -> R.string.backend_art;
