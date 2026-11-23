@@ -28,6 +28,7 @@ final class ShadeRuntime
   int hooks;
   private final Handler main = new Handler(Looper.getMainLooper());
   private final ExecutorService worker = Executors.newSingleThreadExecutor();
+  private final ExecutorService images = Executors.newSingleThreadExecutor();
   private final WallpaperSource wallpaper = new WallpaperSource();
   private final WeakHashMap<View, Binding> surfaces = new WeakHashMap<>();
   private final ArrayList<Binding> moving = new ArrayList<>();
@@ -47,6 +48,15 @@ final class ShadeRuntime
       hardPaused;
   private int localFailures, revision;
   private long lastFailure, photoRevision, lastBackdropRequest;
+  private final android.graphics.Rect visibleRect = new android.graphics.Rect();
+  private int openEpoch, openingRows, submittedFrames;
+  private long openedAt, lastLog;
+  private final Runnable revealFrame =
+      () -> {
+        View host = stack.get();
+        if (open && host != null) host.postInvalidateOnAnimation();
+      };
+  java.util.function.Consumer<String> diagnostic;
   private int cardBackend, mediaBackend, sourceLast, lastMounted, motionEvents;
   private final WeakHashMap<View, WeakReference<View>> rowBackgrounds = new WeakHashMap<>();
   private KeyguardManager keyguard;
@@ -201,7 +211,7 @@ final class ShadeRuntime
         () -> {
           reportQueued = false;
           int count = moving.size();
-          if (count > 0) lastMounted = count;
+          if (open) lastMounted = Math.max(lastMounted, count);
           Bundle data = new Bundle();
           data.putInt("hooks", hooks);
           data.putInt("surfaces", count);
@@ -217,6 +227,25 @@ final class ShadeRuntime
           data.putInt("mediaBackend", mediaBackend);
           data.putInt("source", sourceLast);
           data.putInt("motionEvents", motionEvents);
+          data.putInt("rowFrames", submittedFrames);
+          if (cfg.on(LOGGING)
+              && diagnostic != null
+              && SystemClock.elapsedRealtime() - lastLog > 1800) {
+            lastLog = SystemClock.elapsedRealtime();
+            diagnostic.accept(
+                "1.2 source="
+                    + sourceLast
+                    + " card="
+                    + cardBackend
+                    + " open="
+                    + open
+                    + " peak="
+                    + lastMounted
+                    + " springs="
+                    + motionEvents
+                    + " rowDraws="
+                    + submittedFrames);
+          }
           worker.execute(
               () -> {
                 try {
@@ -248,6 +277,11 @@ final class ShadeRuntime
   public void motion() {
     motionEvents++;
     report();
+  }
+
+  @Override
+  public void rowFrame() {
+    submittedFrames++;
   }
 
   private int id(String name) {
@@ -311,6 +345,15 @@ final class ShadeRuntime
       unlocked = activeUserUnlocked();
       if (!next) safeRefresh();
       else {
+        openEpoch++;
+        openingRows = 0;
+        lastMounted = 0;
+        openedAt = SystemClock.elapsedRealtime();
+        main.removeCallbacks(revealFrame);
+        main.postDelayed(revealFrame, 150);
+        if ((wallpaper.status == WallpaperSource.HOME_FRAME
+                || wallpaper.status == WallpaperSource.LIVE)
+            && openedAt - lastBackdropRequest > 4500) requested = false;
         if ((wallpaper.status == WallpaperSource.UNREADABLE
                 || wallpaper.status == WallpaperSource.DENIED)
             && SystemClock.elapsedRealtime() - lastBackdropRequest > 60000) requested = false;
@@ -361,18 +404,26 @@ final class ShadeRuntime
     if (b != null && b.glass != null) b.glass.pulse(push);
   }
 
+  void swipe(View row, float translation) {
+    if (!open || !unlocked || hardPaused || !cfg.on(MOTION_ON)) return;
+    WeakReference<View> ref = rowBackgrounds.get(row);
+    Binding b = ref == null ? null : surfaces.get(ref.get());
+    if (b == null || b.glass == null) return;
+    float threshold = 12 * row.getResources().getDisplayMetrics().density;
+    if (Math.abs(translation) < threshold * .25f) b.swipeStarted = false;
+    else if (!b.swipeStarted && Math.abs(translation) > threshold) {
+      b.swipeStarted = true;
+      b.glass.pulse(.64f);
+    }
+  }
+
   void touch(View row, MotionEvent event) {
     if (!open || !unlocked || hardPaused || !cfg.on(PRESS) || !cfg.on(MOTION_ON)) return;
     WeakReference<View> ref = rowBackgrounds.get(row);
     View bg = ref == null ? null : ref.get();
     Binding b = bg == null ? null : surfaces.get(bg);
     if (b == null || b.glass == null) return;
-    android.graphics.Rect bounds = b.glass.getBounds();
-    if (bounds.isEmpty()) return;
-    float x = (event.getX() - bg.getLeft() - bounds.exactCenterX()) * 2 / bounds.width();
-    float y = (event.getY() - bg.getTop() - bounds.exactCenterY()) * 2 / bounds.height();
-    b.glass.touch(
-        event.getActionMasked(), Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y)));
+    b.glass.rowTouch(bg, event);
   }
 
   private void register(View v, Material.Kind kind) {
@@ -447,7 +498,7 @@ final class ShadeRuntime
         lastBackdropRequest = SystemClock.elapsedRealtime();
         wallpaper.refresh(
             anchor.getContext(),
-            worker,
+            images,
             main,
             new int[] {1920, 1280, 720}[cfg.get(PERFORMANCE)],
             customPhoto,
@@ -585,6 +636,7 @@ final class ShadeRuntime
             && (v == frame || (back.glass.hasDrawnBackdrop() && ancestorView(v, frame)));
     if (b.kind == CARD) {
       View row = ancestor(v, ShadeModule.ROW);
+      if (row != null) g.bindRow(row);
       View label = row == null ? null : row.findViewById(android.R.id.title);
       g.darkText =
           label instanceof TextView title
@@ -616,6 +668,20 @@ final class ShadeRuntime
       Binding b = moving.get(i);
       View v = b.view.get();
       Material m = b.glass;
+      if (b.kind == CARD
+          && SystemClock.elapsedRealtime() - openedAt >= 120
+          && b.revealEpoch != openEpoch
+          && v != null
+          && m != null
+          && openingRows < 7
+          && SystemClock.elapsedRealtime() - openedAt < 950
+          && v.isShown()
+          && v.getGlobalVisibleRect(visibleRect)
+          && visibleRect.height() >= 24) {
+        b.revealEpoch = openEpoch;
+        openingRows++;
+        m.reveal();
+      }
       if (b.kind == MEDIA && v instanceof ImageView art && b.artChanged(art)) schedule();
       if (v != null && m != null && v.isShown() && m.positionChanged()) v.invalidate();
     }

@@ -75,6 +75,7 @@ public final class Bridge extends ContentProvider {
           .putInt("cardBackend", in.getInt("cardBackend"))
           .putInt("mediaBackend", in.getInt("mediaBackend"))
           .putInt("motionEvents", in.getInt("motionEvents"))
+          .putInt("rowFrames", in.getInt("rowFrames"))
           .putInt("lastMounted", in.getInt("lastMounted"))
           .putInt("source", in.getInt("source"))
           .putLong("stamp", SystemClock.elapsedRealtime())

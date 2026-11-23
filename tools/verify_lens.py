@@ -85,3 +85,11 @@ held_mask = render(12, overrides=dict(geometry, detail=(1, 0, 1, 0)))[:, :, 3]
 assert idle_mask[80, 203] > 200 and held_mask[80, 203] < 20
 assert idle_mask[80, 36] == held_mask[80, 36]
 print("PASS: local pressure deforms the contacted edge and preserves the opposite edge")
+
+# A uniform dark shade exposes the fallback bevel without needing wallpaper pixels.
+mat = render(0, overrides={"surface": (-.55, -.4, 0, 2), "finish": (0, 2, .55, .36),
+                            "tone": (1, 0, .12, 0), "accent": (.87, .94, .97, 1)})
+alpha = mat[:, :, 3:4].astype(float) / 255
+composited = mat[:, :, :3] * alpha + (1 - alpha) * [16, 23, 36]
+assert np.linalg.norm(composited[36, 120]-composited[80, 120]) > 15, "bevel disappears on a dark native shade"
+print("PASS: internal bevel is visible above a uniform dark system backdrop")

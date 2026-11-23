@@ -468,6 +468,8 @@ public final class SettingsActivity extends Activity {
               + "  ·  "
               + getString(
                   switch (p.getInt("source", 0)) {
+                    case WallpaperSource.HOME_FRAME -> R.string.source_frame;
+                    case WallpaperSource.HOME_THUMB -> R.string.source_thumb;
                     case WallpaperSource.SYSTEM -> R.string.source_system;
                     case WallpaperSource.PHOTO -> R.string.source_photo;
                     case WallpaperSource.LIVE -> R.string.source_live;
@@ -479,6 +481,7 @@ public final class SettingsActivity extends Activity {
       state +=
           "\n" + getString(R.string.last_media) + "  ·  " + backend(p.getInt("mediaBackend", 0));
       state += "\n" + getString(R.string.impulses) + "  ·  " + p.getInt("motionEvents", 0);
+      state += "\n" + getString(R.string.row_frames) + "  ·  " + p.getInt("rowFrames", 0);
       if (!p.getBoolean("open", false)) state += "\n" + getString(R.string.standby);
     }
     state +=

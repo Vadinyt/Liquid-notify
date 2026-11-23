@@ -84,6 +84,15 @@ half4 main(float2 point) {
   if(detail.y>0.0)alpha*=1.0-smoothstep(1.0,max(1.01,detail.y),inset);
   if(surface.z<.5) {
     // Premultiplied decoration over the real compositor output. No image sampling here.
+    // Two bands on opposite sides of a curved bevel keep the relief legible on flat OEM blur.
+    float width=max(bevel,1.0);
+    float shoulder=exp(-abs(inset/width-.32)*5.0);
+    float inner=exp(-abs(inset/width-.77)*7.0);
+    float directional=.25+.75*abs(facing);
+    float caustic=(.19*finish.z+.30*finish.w)*shoulder*directional
+                 +.14*finish.w*inner*max(-facing,0.0);
+    shine=clamp(shine+caustic,0.0,.92);
+    shadow=clamp(shadow+.12*finish.w*inner*max(facing,0.0),0.0,.34);
     float tintA=tone.z;
     float3 tintRGB=mix(float3(dot(accent.rgb,float3(.2126,.7152,.0722))),accent.rgb,tone.x+tone.y*.35);
     float bodyA=tintA+(1.0-tintA)*detail.w;

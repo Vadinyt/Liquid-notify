@@ -52,6 +52,8 @@ final class Material extends GradientDrawable {
     void drawn(Material material, int backend);
 
     void motion();
+
+    void rowFrame();
   }
 
   Events events;
@@ -59,6 +61,10 @@ final class Material extends GradientDrawable {
   private int lastBackend;
 
   private void rendered(int backend) {
+    if (tickHasRow && !frameReported && events != null) {
+      frameReported = true;
+      events.rowFrame();
+    }
     if (lastBackend != backend) {
       lastBackend = backend;
       if (events != null) events.drawn(this, backend);
@@ -76,7 +82,44 @@ final class Material extends GradientDrawable {
   private int gradientWidth, gradientHeight, gradientColor, gradientAlpha;
   private final Matrix gradientMatrix = new Matrix();
   private int alpha = 255, lastW, lastH;
-  private long lastMove;
+  private RowMotion rowMotion;
+  private boolean tickHasRow, frameReported;
+  private final Matrix previewTransform = new Matrix();
+  private final RowPose previewPose = new RowPose();
+
+  void bindRow(View row) {
+    if (rowMotion == null) rowMotion = new RowMotion(row);
+  }
+
+  void previewTransform(Canvas canvas) {
+    previewTransform.reset();
+    if (!cfg.on(MOTION_ON) || kind != Kind.CARD || response == 0) return;
+    View v = owner.get();
+    Rect b = getBounds();
+    if (v == null || b.isEmpty()) return;
+    previewPose.set(
+        b.left,
+        b.top,
+        b.width(),
+        b.height(),
+        v.getResources().getDisplayMetrics().density,
+        response,
+        cfg.unit(MOTION_AMOUNT),
+        fingerX,
+        fingerY);
+    previewTransform.setScale(previewPose.sx, previewPose.sy, previewPose.px, previewPose.py);
+    previewTransform.postTranslate(previewPose.dx, previewPose.dy);
+    canvas.concat(previewTransform);
+  }
+
+  void reveal() {
+    if (!contact) {
+      fingerX = 0;
+      fingerY = -.5f;
+      animate(0, 0, true);
+    }
+  }
+
   private float topOem = Float.NaN, bottomOem = Float.NaN, response;
   private ValueAnimator spring;
   private boolean pressed;
@@ -131,13 +174,22 @@ final class Material extends GradientDrawable {
     return super.onStateChange(states);
   }
 
+  void rowTouch(View bg, android.view.MotionEvent event) {
+    Rect b = getBounds();
+    int w = b.isEmpty() ? bg.getWidth() : b.width(), h = b.isEmpty() ? bg.getHeight() : b.height();
+    if (w <= 0 || h <= 0) return;
+    float x = (event.getX() - bg.getLeft() - b.left) * 2 / w - 1;
+    float y = (event.getY() - bg.getTop() - b.top) * 2 / h - 1;
+    touch(event.getActionMasked(), Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y)));
+  }
+
   void touch(int action, float x, float y) {
     if (!cfg.on(PRESS) || !cfg.on(MOTION_ON)) return;
     if (action == 0) {
       contact = true;
       fingerX = x;
       fingerY = y;
-      animate(1, 4);
+      animate(1, 4, false);
     } else if (action == 2 && contact) {
       fingerX = x;
       fingerY = y;
@@ -145,7 +197,7 @@ final class Material extends GradientDrawable {
       if (v != null && spring != null && ValueAnimator.areAnimatorsEnabled()) v.invalidate();
     } else if ((action == 1 || action == 3) && contact) {
       contact = false;
-      animate(0, -4);
+      animate(0, -4, false);
     }
   }
 
@@ -154,12 +206,13 @@ final class Material extends GradientDrawable {
       fingerX = -.42f;
       fingerY = -.7f;
     }
-    animate(contact ? 1 : 0, impulse * 25);
+    animate(contact ? 1 : 0, impulse * 30, false);
   }
 
-  private void animate(float target, float impulse) {
+  private void animate(float target, float impulse, boolean reveal) {
     View v = owner.get();
     if (v == null
+        || cfg.get(MOTION_AMOUNT) == 0
         || !cfg.on(MOTION_ON)
         || cfg.get(PERFORMANCE) == 2
         || !ValueAnimator.areAnimatorsEnabled()) return;
@@ -182,9 +235,22 @@ final class Material extends GradientDrawable {
             else physics.sample(t * 1.05f);
             response = Math.max(-.7f, Math.min(1.4f, physics.value));
             View host = owner.get();
-            if (host != null) host.invalidate();
+            if (host != null) {
+              tickHasRow =
+                  rowMotion != null
+                      && rowMotion.frame(
+                          host, getBounds(), response, cfg.unit(MOTION_AMOUNT), fingerX, fingerY);
+              frameReported = false;
+              invalidateSelf();
+              host.invalidate();
+            }
           });
     } else spring.cancel();
+    if (rowMotion != null) rowMotion.begin();
+    if (reveal) {
+      physics.reset();
+      physics.value = .98f * Math.min(scale, 1);
+    }
     float goal = target * Math.min(scale, 1f);
     physics.target(goal, impulse * Math.min(1, scale), cfg.unit(STIFFNESS), cfg.unit(DAMPING));
     spring.setDuration((long) (1050 / (.65f + 1.5f * cfg.unit(SPEED))));
@@ -197,9 +263,14 @@ final class Material extends GradientDrawable {
   }
 
   void configure(Config next) {
-    if ((!next.on(MOTION_ON) || next.get(PERFORMANCE) == 2 || (contact && !next.on(PRESS)))
+    if ((next.get(MOTION_AMOUNT) == 0
+            || !next.on(MOTION_ON)
+            || next.get(PERFORMANCE) == 2
+            || (contact && !next.on(PRESS)))
         && (contact || response != 0 || (spring != null && spring.isRunning()))) {
       if (spring != null) spring.cancel();
+      if (rowMotion != null) rowMotion.clear();
+      tickHasRow = false;
       contact = false;
       response = 0;
       physics.reset();
@@ -213,6 +284,8 @@ final class Material extends GradientDrawable {
 
   void suspend() {
     nativeBlur.suspend();
+    if (rowMotion != null) rowMotion.clear();
+    tickHasRow = false;
     if (spring != null) spring.cancel();
     response = 0;
     contact = false;
@@ -239,6 +312,7 @@ final class Material extends GradientDrawable {
       viewToScreen.reset();
       rootToScreen.reset();
       v.transformMatrixToGlobal(viewToScreen);
+      if (rowMotion != null) rowMotion.mapToWindow(viewToScreen);
       root.transformMatrixToGlobal(rootToScreen);
       if (!rootToScreen.invert(inverseRoot)) {
         boolean changed = mapped;
@@ -246,17 +320,10 @@ final class Material extends GradientDrawable {
         return changed;
       }
       relative.setConcat(inverseRoot, viewToScreen);
-    }
+    } else relative.set(previewTransform);
     relative.getValues(nextMap);
     if (mapped && w == lastW && h == lastH && java.util.Arrays.equals(nextMap, currentMap))
       return false;
-    if (mapped
-        && kind == Kind.CARD
-        && Math.abs(nextMap[2] - currentMap[2]) > 4
-        && android.os.SystemClock.uptimeMillis() - lastMove > 450) {
-      lastMove = android.os.SystemClock.uptimeMillis();
-      pulse(.28f);
-    }
     System.arraycopy(nextMap, 0, currentMap, 0, 9);
     lastW = w;
     lastH = h;
@@ -329,9 +396,10 @@ final class Material extends GradientDrawable {
     float radius =
         field ? 0 : Math.min(limit, dp * (6 + 44 * cfg.unit(media ? MEDIA_RADIUS : CARD_RADIUS)));
     if (kind == Kind.FOOTER) radius = limit;
-    float movement = cfg.on(MOTION_ON) && cfg.get(PERFORMANCE) != 2 ? response : 0;
+    float movement =
+        cfg.on(MOTION_ON) && cfg.get(PERFORMANCE) != 2 ? response * cfg.unit(MOTION_AMOUNT) : 0;
     if (!field && movement != 0) {
-      // Optical squeeze happens inside the native hit target. Artwork and text keep their geometry.
+      // The local optical squeeze adds curvature inside the native row transform.
       float squeeze = Math.max(0f, movement);
       box.inset(dp * 2.3f * squeeze, dp * 2.8f * squeeze);
       radius = Math.max(0, Math.min(limit, radius + dp * 3 * movement));

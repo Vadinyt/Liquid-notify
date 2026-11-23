@@ -41,6 +41,7 @@ enum Option {
   GRADIENT(R.string.shade, R.string.gradient, 19, 100),
   FOOTER(R.string.shade, R.string.footer, 1, 1),
   MOTION_ON(R.string.motion, R.string.motion_on, 1, 1),
+  MOTION_AMOUNT(R.string.motion, R.string.motion_amount, 80, 100),
   STIFFNESS(R.string.motion, R.string.stiffness, 52, 100),
   DAMPING(R.string.motion, R.string.damping, 67, 100),
   SPEED(R.string.motion, R.string.speed, 48, 100),

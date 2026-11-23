@@ -36,6 +36,36 @@ public final class ShadeModule extends XposedModule {
     runtime.hooks++;
   }
 
+  private void onExpansionChange(Class<?> cls, String method, String fieldName, Class<?>... args)
+      throws ReflectiveOperationException {
+    Field flag = field(cls, fieldName, boolean.class);
+    Method m = cls.getDeclaredMethod(method, args);
+    if (m.getReturnType() != void.class) return;
+    hook(m)
+        .intercept(
+            c -> {
+              View row = (View) c.getThisObject();
+              boolean before;
+              try {
+                before = flag.getBoolean(row);
+              } catch (IllegalAccessException e) {
+                return c.proceed();
+              }
+              Object result = c.proceed();
+              try {
+                boolean after = flag.getBoolean(row);
+                if (before != after) runtime.motion(row, after ? .84f : -.78f);
+              } catch (IllegalAccessException
+                  | RuntimeException
+                  | LinkageError
+                  | OutOfMemoryError e) {
+                runtime.failure(e);
+              }
+              return result;
+            });
+    runtime.hooks++;
+  }
+
   static Field field(Class<?> type, String name, Class<?> expected) throws NoSuchFieldException {
     Field field = type.getDeclaredField(name);
     if (!expected.isAssignableFrom(field.getType())) throw new NoSuchFieldException(name);
@@ -51,6 +81,7 @@ public final class ShadeModule extends XposedModule {
         || Build.VERSION.SDK_INT != 37
         || !"samsung".equalsIgnoreCase(Build.MANUFACTURER)) return;
     ClassLoader cl = param.getClassLoader();
+    runtime.diagnostic = msg -> log(android.util.Log.INFO, "LiquidShade", msg);
     // Each adapter is optional. An unknown signature leaves that surface to Samsung.
     try {
       Class<?> s = cl.loadClass(STACK);
@@ -76,9 +107,23 @@ public final class ShadeModule extends XposedModule {
       after(r, "updateBackgroundForGroupState", v -> runtime.row((View) v));
       after(b, "setCustomBackground", v -> runtime.backgroundChanged((View) v), recoil);
       runtime.cardCompatible = true;
-      after(
-          r, "setUserExpanded", v -> runtime.motion((View) v, .65f), boolean.class, boolean.class);
-      after(r, "setChildrenExpanded", v -> runtime.motion((View) v, .55f), boolean.class);
+      onExpansionChange(r, "setUserExpanded", "mUserExpanded", boolean.class, boolean.class);
+      onExpansionChange(r, "setChildrenExpanded", "mChildrenExpanded", boolean.class);
+      Method swipe = r.getDeclaredMethod("setTranslation", float.class);
+      if (swipe.getReturnType() == void.class) {
+        hook(swipe)
+            .intercept(
+                c -> {
+                  Object result = c.proceed();
+                  try {
+                    runtime.swipe((View) c.getThisObject(), (float) c.getArg(0));
+                  } catch (RuntimeException | LinkageError | OutOfMemoryError e) {
+                    runtime.failure(e);
+                  }
+                  return result;
+                });
+        runtime.hooks++;
+      }
       after(r, "performDismiss", v -> runtime.motion((View) v, -.65f), boolean.class);
     } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
     }

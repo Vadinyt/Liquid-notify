@@ -16,6 +16,8 @@ final class Binding {
   Drawable original;
   Material glass, idle;
   boolean overlay;
+  int revealEpoch;
+  boolean swipeStarted;
   private WeakReference<ProgressBar> bar;
   private ColorStateList oldTint, appliedTint;
 
@@ -43,6 +45,7 @@ final class Binding {
   }
 
   void uninstall() {
+    swipeStarted = false;
     View v = view.get();
     if (glass != null && v != null && owns(v)) {
       if (layers != null) {

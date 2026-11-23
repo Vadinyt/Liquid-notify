@@ -139,6 +139,8 @@ final class Preview extends View {
                     ? MEDIA_ON
                     : mode == Material.Kind.FOOTER ? FOOTER : CARDS_ON);
     glass.allowTexture = c.on(SHADE_ON);
+    int rowSave = canvas.save();
+    if (active) glass.previewTransform(canvas);
     if (mode == Material.Kind.MEDIA) {
       glass.edgeOnly = true;
       // Draw a sharp album crop first. The same inverse crop feeds the edge-only production lens.
@@ -194,6 +196,7 @@ final class Preview extends View {
       canvas.drawRoundRect(
           left + cw * .22f, top + ch * .75f, left + cw * .78f, top + ch * .75f + 2 * dp, dp, dp, p);
     }
+    canvas.restoreToCount(rowSave);
   }
 
   @Override
@@ -229,7 +232,7 @@ final class Preview extends View {
   }
 
   void replay() {
-    layers[mode.ordinal()].pulse(1f);
+    layers[mode.ordinal()].reveal();
   }
 
   @Override

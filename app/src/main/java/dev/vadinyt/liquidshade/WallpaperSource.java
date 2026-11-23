@@ -7,7 +7,10 @@ import android.os.*;
 import java.io.*;
 import java.util.concurrent.Executor;
 
-/** A bounded copy of the current user's static SYSTEM wallpaper. Never reads a window surface. */
+/**
+ * A bounded shade backing selected from the current user’s home wallpaper or chosen photo. Never
+ * reads a window surface.
+ */
 final class WallpaperSource {
   Bitmap image;
   Bitmap[] levels = new Bitmap[0];
@@ -36,9 +39,17 @@ final class WallpaperSource {
     return levels[i];
   }
 
-  static final int UNKNOWN = 0, SYSTEM = 1, PHOTO = 2, LIVE = 3, DENIED = 4, UNREADABLE = 5;
+  static final int UNKNOWN = 0,
+      SYSTEM = 1,
+      PHOTO = 2,
+      LIVE = 3,
+      DENIED = 4,
+      UNREADABLE = 5,
+      HOME_FRAME = 6,
+      HOME_THUMB = 7;
+  private final HomeWallpaper home = new HomeWallpaper();
   int status = UNKNOWN;
-  private int generation;
+  private volatile int generation;
   float luminance = .45f;
 
   void clear() {
@@ -50,13 +61,11 @@ final class WallpaperSource {
 
   // Samsung also hosts static image wallpapers through a service. Prefer the reported
   // wallpaper type when present (SEM_WALLPAPER_TYPE_IMAGE); fall back to Android's API.
-  private static boolean isStatic(WallpaperManager wm) {
+  private static boolean isStatic(WallpaperManager wm, int which) {
     try {
       int type =
           (int)
-              WallpaperManager.class
-                  .getMethod("semGetWallpaperType", int.class)
-                  .invoke(wm, WallpaperManager.FLAG_SYSTEM);
+              WallpaperManager.class.getMethod("semGetWallpaperType", int.class).invoke(wm, which);
       int imageType = WallpaperManager.class.getField("SEM_WALLPAPER_TYPE_IMAGE").getInt(null);
       if (type >= 0) return type == imageType;
     } catch (ReflectiveOperationException | RuntimeException ignored) {
@@ -65,37 +74,6 @@ final class WallpaperSource {
             ? wm.getWallpaperInfo(WallpaperManager.FLAG_SYSTEM)
             : wm.getWallpaperInfo())
         == null;
-  }
-
-  private static Bitmap decode(ParcelFileDescriptor fd, int edge) throws IOException {
-    if (fd == null) return null;
-    BitmapFactory.Options opt = new BitmapFactory.Options();
-    opt.inJustDecodeBounds = true;
-    BitmapFactory.decodeFileDescriptor(fd.getFileDescriptor(), null, opt);
-    if (opt.outWidth <= 0 || opt.outHeight <= 0) return null;
-    opt.inJustDecodeBounds = false;
-    opt.inSampleSize = 1;
-    while (Math.max(opt.outWidth, opt.outHeight) / (long) opt.inSampleSize > edge * 1.45)
-      opt.inSampleSize *= 2;
-    try {
-      android.system.Os.lseek(fd.getFileDescriptor(), 0, android.system.OsConstants.SEEK_SET);
-    } catch (android.system.ErrnoException e) {
-      throw new IOException(e);
-    }
-    opt.inPreferredConfig = Bitmap.Config.ARGB_8888;
-    Bitmap decoded = BitmapFactory.decodeFileDescriptor(fd.getFileDescriptor(), null, opt);
-    if (decoded == null) return null;
-    int max = Math.max(decoded.getWidth(), decoded.getHeight());
-    if (max <= edge) return decoded;
-    float ratio = edge / (float) max;
-    Bitmap scaled =
-        Bitmap.createScaledBitmap(
-            decoded,
-            Math.max(1, Math.round(decoded.getWidth() * ratio)),
-            Math.max(1, Math.round(decoded.getHeight() * ratio)),
-            true);
-    if (decoded != scaled) decoded.recycle();
-    return scaled;
   }
 
   static float measureLight(Bitmap b) {
@@ -115,6 +93,7 @@ final class WallpaperSource {
     int token = ++generation;
     worker.execute(
         () -> {
+          if (token != generation) return;
           Bitmap result = null;
           int reason = UNREADABLE;
           try {
@@ -127,12 +106,29 @@ final class WallpaperSource {
               WallpaperManager wm = ui.getSystemService(WallpaperManager.class);
               if (ui.checkSelfPermission("android.permission.READ_WALLPAPER_INTERNAL")
                   != android.content.pm.PackageManager.PERMISSION_GRANTED) reason = DENIED;
-              else if (!isStatic(wm)) reason = LIVE;
-              else
-                try (ParcelFileDescriptor f = wm.getWallpaperFile(WallpaperManager.FLAG_SYSTEM)) {
-                  result = decode(f, maxEdge);
-                  if (result != null) reason = SYSTEM;
+              else if (HomeWallpaper.unlocked(ui)) {
+                boolean fixed = false;
+                try {
+                  fixed = isStatic(wm, home.homeFlag());
+                } catch (RuntimeException ignored) {
                 }
+                if (fixed) {
+                  try {
+                    result =
+                        HomeWallpaper.decode(
+                            wm.getWallpaperFile(WallpaperManager.FLAG_SYSTEM), maxEdge);
+                  } catch (IOException | IllegalArgumentException unavailable) {
+                  }
+                }
+                if (result != null) reason = SYSTEM;
+                else {
+                  HomeWallpaper.Sample capture = home.read(ui, wm, maxEdge);
+                  if (capture != null) {
+                    result = capture.pixels();
+                    reason = capture.status();
+                  } else reason = fixed ? UNREADABLE : LIVE;
+                }
+              }
             }
           } catch (SecurityException denied) {
             reason = DENIED;
@@ -164,7 +160,7 @@ final class WallpaperSource {
           final int why = reason;
           main.post(
               () -> {
-                if (token == generation) {
+                if (token == generation && HomeWallpaper.unlocked(ui)) {
                   image = next;
                   levels = chain;
                   luminance = level;
