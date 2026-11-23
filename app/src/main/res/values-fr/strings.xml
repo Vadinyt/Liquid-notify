@@ -118,4 +118,8 @@
     <string name="source_native">One UI · scène actuelle</string>
     <string name="photo_mode">Afficher la photo choisie</string>
     <string name="backend_live">Lentille sur le calque du volet (effet soumis)</string>
+    <string name="preview_native_mode">Aperçu : rendu One UI sans image · toucher pour voir la démo</string>
+    <string name="preview_demo_mode">Aperçu : réfraction sur image · toucher pour voir One UI</string>
+    <string name="preview_photo_mode">Aperçu : image sélectionnée (réfraction réelle)</string>
+    <string name="settings_sync">Réglages synchronisés avec SystemUI</string>
 </resources>

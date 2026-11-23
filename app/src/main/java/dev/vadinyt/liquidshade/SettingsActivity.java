@@ -49,7 +49,7 @@ public final class SettingsActivity extends Activity {
   private Config cfg;
   private Preview preview;
   private LinearLayout rows, nav;
-  private TextView status;
+  private TextView status, previewLabel;
   private ScrollView list;
   private int section;
   private long pingAt;
@@ -89,6 +89,15 @@ public final class SettingsActivity extends Activity {
                 getResources().getConfiguration().orientation == Configuration.ORIENTATION_LANDSCAPE
                     ? 68
                     : 128)));
+    previewLabel = text("", 12, MUTED);
+    previewLabel.setGravity(Gravity.CENTER);
+    previewLabel.setPadding(0, dp(3), 0, dp(6));
+    previewLabel.setOnClickListener(
+        v -> {
+          preview.toggleEstimate();
+          updatePreviewLabel();
+        });
+    root.addView(previewLabel);
     HorizontalScrollView sc = new HorizontalScrollView(this);
     sc.setHorizontalScrollBarEnabled(false);
     nav = new LinearLayout(this);
@@ -106,6 +115,7 @@ public final class SettingsActivity extends Activity {
   protected void onResume() {
     super.onResume();
     preview.reloadPhoto();
+    updatePreviewLabel();
     getContentResolver().registerContentObserver(Bridge.STATUS, false, observer);
     ping();
   }
@@ -195,6 +205,7 @@ public final class SettingsActivity extends Activity {
             ? Material.Kind.MEDIA
             : section == 4 ? Material.Kind.FOOTER : Material.Kind.CARD;
     preview.config(cfg);
+    updatePreviewLabel();
     if (section == 0)
       choice(
           getString(R.string.presets),
@@ -265,6 +276,18 @@ public final class SettingsActivity extends Activity {
     }
   }
 
+  private void updatePreviewLabel() {
+    if (previewLabel == null || preview == null || cfg == null) return;
+    boolean photo = cfg.usesPhoto(BackdropPhoto.exists(this));
+    previewLabel.setText(
+        photo
+            ? R.string.preview_photo_mode
+            : preview.nativeEstimate()
+                ? R.string.preview_native_mode
+                : R.string.preview_demo_mode);
+    previewLabel.setEnabled(!photo);
+  }
+
   private void edited(Option o, int value) {
     cfg.set(o, value);
     if (o.section == R.string.optics
@@ -276,6 +299,7 @@ public final class SettingsActivity extends Activity {
 
   private void changed() {
     preview.config(cfg);
+    updatePreviewLabel();
     main.removeCallbacks(persist);
     main.postDelayed(persist, 95);
   }
@@ -482,6 +506,15 @@ public final class SettingsActivity extends Activity {
           "\n" + getString(R.string.last_media) + "  ·  " + backend(p.getInt("mediaBackend", 0));
       state += "\n" + getString(R.string.impulses) + "  ·  " + p.getInt("motionEvents", 0);
       state += "\n" + getString(R.string.row_frames) + "  ·  " + p.getInt("rowFrames", 0);
+      int applied = p.getInt("settingsDigest", 0);
+      state +=
+          "\n"
+              + getString(R.string.settings_sync)
+              + "  ·  "
+              + getString(
+                  applied == 0
+                      ? R.string.waiting
+                      : applied == Bridge.load(this).signature() ? R.string.yes : R.string.no);
       if (!p.getBoolean("open", false)) state += "\n" + getString(R.string.standby);
     }
     state +=

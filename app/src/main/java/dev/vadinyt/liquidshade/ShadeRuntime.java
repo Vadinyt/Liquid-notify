@@ -233,12 +233,13 @@ final class ShadeRuntime
           data.putInt("source", sourceLast);
           data.putInt("motionEvents", motionEvents);
           data.putInt("rowFrames", submittedFrames);
+          data.putInt("settingsDigest", loaded ? cfg.signature() : 0);
           if (cfg.on(LOGGING)
               && diagnostic != null
               && SystemClock.elapsedRealtime() - lastLog > 1800) {
             lastLog = SystemClock.elapsedRealtime();
             diagnostic.accept(
-                "1.5 source="
+                "1.5.1 source="
                     + sourceLast
                     + " card="
                     + cardBackend

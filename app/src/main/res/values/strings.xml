@@ -118,4 +118,8 @@
     <string name="source_native">One UI · current scene</string>
     <string name="photo_mode">Use the selected photo</string>
     <string name="backend_live">Shade-layer lens (effect submitted)</string>
+    <string name="preview_native_mode">Preview: One UI without image · tap for demo</string>
+    <string name="preview_demo_mode">Preview: refraction on image · tap for One UI</string>
+    <string name="preview_photo_mode">Preview: selected image (image refraction)</string>
+    <string name="settings_sync">Settings synchronized with SystemUI</string>
 </resources>

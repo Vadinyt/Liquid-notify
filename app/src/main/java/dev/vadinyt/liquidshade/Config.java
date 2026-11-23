@@ -65,6 +65,13 @@ final class Config {
     for (int i = 0; i < params.length; i++) set(params[i], values[index][i]);
   }
 
+  /** Stable in-process fingerprint for checking live settings delivery, not a security hash. */
+  int signature() {
+    int hash = 1;
+    for (int value : values) hash = 31 * hash + value;
+    return 31 * hash + preset;
+  }
+
   String encode() {
     try {
       JSONObject json = new JSONObject().put("schema", 1).put("preset", preset);

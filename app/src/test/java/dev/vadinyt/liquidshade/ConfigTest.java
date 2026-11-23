@@ -76,6 +76,15 @@ public class ConfigTest {
   }
 
   @Test
+  public void signatureTracksChangesAndSurvivesImport() throws Exception {
+    Config c = new Config();
+    int initial = c.signature();
+    c.set(Option.BLUR, 90);
+    assertNotEquals(initial, c.signature());
+    assertEquals(c.signature(), Config.decode(c.encode()).signature());
+  }
+
+  @Test
   public void badImportIsRejected() throws Exception {
     JSONObject data = new JSONObject(new Config().encode()).put("BEVEL", 101);
     assertThrows(JSONException.class, () -> Config.decode(data.toString()));

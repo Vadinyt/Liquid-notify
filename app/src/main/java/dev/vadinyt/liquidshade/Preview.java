@@ -24,7 +24,20 @@ final class Preview extends View {
   private Config c;
   private float x = .50f, downX, startX;
   private boolean dragged;
+  private boolean nativeEstimate = true;
   Material.Kind mode = Material.Kind.CARD;
+
+  boolean nativeEstimate() { return nativeEstimate; }
+
+  void toggleEstimate() {
+    if (c.usesPhoto(BackdropPhoto.exists(getContext()))) return;
+    nativeEstimate = !nativeEstimate;
+    invalidate();
+  }
+
+  private boolean hasTexture() {
+    return !nativeEstimate || c.usesPhoto(BackdropPhoto.exists(getContext()));
+  }
 
   Preview(Context ctx, Config config) {
     super(ctx);
@@ -147,16 +160,21 @@ final class Preview extends View {
     int w = getWidth(), h = getHeight();
     if (w == 0 || h == 0) return;
     Material stage = layers[Material.Kind.SHADE.ordinal()];
-    if (c.on(ENABLED) && c.on(SHADE_ON)) {
-      stage.setBounds(0, 0, w, h);
-      stage.draw(canvas);
-    } else {
+    boolean textured = hasTexture();
+    // Native preview paints a representative scene first, then uses the *same* no-image
+    // material path as SystemUI. The optional demonstration samples the image as before.
+    if (!textured || !c.on(ENABLED) || !c.on(SHADE_ON)) {
       float scale =
           Math.max(w / (float) source.image.getWidth(), h / (float) source.image.getHeight());
       float bw = source.image.getWidth() * scale, bh = source.image.getHeight() * scale;
       area.set((w - bw) / 2, (h - bh) / 2, (w + bw) / 2, (h + bh) / 2);
       p.setColor(Color.WHITE);
       canvas.drawBitmap(source.image, null, area, p);
+    }
+    stage.allowTexture = textured;
+    if (c.on(ENABLED) && c.on(SHADE_ON)) {
+      stage.setBounds(0, 0, w, h);
+      stage.draw(canvas);
     }
     int
         cw =
@@ -181,7 +199,7 @@ final class Preview extends View {
                 mode == Material.Kind.MEDIA
                     ? MEDIA_ON
                     : mode == Material.Kind.FOOTER ? FOOTER : CARDS_ON);
-    glass.allowTexture = c.on(SHADE_ON);
+    glass.allowTexture = textured && c.on(SHADE_ON);
     int rowSave = canvas.save();
     if (active) glass.previewTransform(canvas);
     if (mode == Material.Kind.MEDIA) {

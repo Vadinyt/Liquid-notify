@@ -556,6 +556,18 @@ final class Material extends GradientDrawable {
       }
       box.top = savedTop;
     }
+    // SystemUI often exposes only a transparent layer, not the pixels behind its window.
+    // In that case the face cannot physically refract or blur the scene. Map the user optics
+    // to restrained frost and edge lighting rather than leaving the controls inert.
+    boolean transparentBackend = !hasImage && !liveSubmitted && !field && !edgeOnly;
+    float reflection = field ? 0f : cfg.unit(REFLECTION);
+    if (transparentBackend) {
+      float frost = Math.min(1f, spread / Math.max(1f, dp * 30f));
+      amount = Math.min(.68f, amount + .14f * frost);
+      edge *= .45f + .34f * cfg.unit(REFRACTION) + .21f * cfg.unit(COMPRESSION);
+      reflection *= .75f;
+      border *= .84f;
+    }
     if (mapped
         && (hasImage || !field || useLiveBackdrop)
         && !shaderFailed
@@ -622,7 +634,7 @@ final class Material extends GradientDrawable {
             field || mode == 2 ? 0f : dp * (mode == 0 ? .85f : .55f) * cfg.unit(DISPERSION),
             border,
             edge,
-            field ? 0 : cfg.unit(REFLECTION));
+            reflection);
         program.setFloatUniform(
             "tone",
             field ? 1 : .3f + 1.4f * cfg.unit(SATURATION),

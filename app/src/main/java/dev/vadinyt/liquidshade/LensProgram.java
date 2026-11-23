@@ -142,7 +142,11 @@ half4 main(float2 point) {
     float bodyA=tintA+(1.0-tintA)*detail.w;
     float3 body=tintRGB*tintA*(1.0-detail.w)+float3(wash.z)*detail.w;
     body*=1.0-shadow;bodyA+=shadow*(1.0-bodyA);
-    float3 rgb=body*(1.0-shine)+flags.rgb*shine;
+    // The native transparent backend has no pixels to displace. Dispersion instead gives
+    // its narrow highlight a subtle red/blue separation without inventing a backdrop.
+    float split=clamp(finish.x/max(surface.w,1.0),0.0,.85)*band;
+    float3 rimColour=clamp(flags.rgb+float3(.10*split,-.01*split,-.11*split),0.0,1.0);
+    float3 rgb=body*(1.0-shine)+rimColour*shine;
     float a=bodyA*(1.0-shine)+shine;
     clearGlass=half4(clamp(rgb,0.0,a)*alpha,a*alpha);
     if(surface.z<.5 || coverage<=0.0)return clearGlass;

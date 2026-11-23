@@ -78,6 +78,7 @@ public final class Bridge extends ContentProvider {
           .putInt("rowFrames", in.getInt("rowFrames"))
           .putInt("lastMounted", in.getInt("lastMounted"))
           .putInt("source", in.getInt("source"))
+          .putInt("settingsDigest", in.getInt("settingsDigest"))
           .putLong("stamp", SystemClock.elapsedRealtime())
           .apply();
       c.getContentResolver().notifyChange(STATUS, null);

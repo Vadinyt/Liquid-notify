@@ -8,8 +8,8 @@ android {
         applicationId 'dev.vadinyt.liquidshade'
         minSdk 33
         targetSdk 35
-        versionCode 6
-        versionName '1.5.0'
+        versionCode 7
+        versionName '1.5.1'
         testInstrumentationRunner 'dev.vadinyt.liquidshade.GlassInstrumentation'
     }
     signingConfigs {
