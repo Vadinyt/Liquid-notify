@@ -27,6 +27,8 @@ jobs:
           cp "$RUNNER_TEMP/liquidshade.jks" "$HOME/.android/debug.keystore"
       - name: Verify the lens pixel contract
         run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends libegl1 libgl1 libfontconfig1
           python3 -m venv "$RUNNER_TEMP/optics"
           "$RUNNER_TEMP/optics/bin/pip" install skia-python==144.1 numpy==2.2.6
           "$RUNNER_TEMP/optics/bin/python" tools/verify_lens.py

@@ -58,7 +58,7 @@ final class ShadeRuntime
     if (app == null) return;
     keyguard = app.getSystemService(KeyguardManager.class);
     connected = true;
-    unlocked = !keyguard.isKeyguardLocked();
+    unlocked = activeUserUnlocked();
     ContentObserver obs =
         new ContentObserver(main) {
           @Override
@@ -73,15 +73,16 @@ final class ShadeRuntime
     events.addAction(Intent.ACTION_SCREEN_OFF);
     events.addAction(Intent.ACTION_SCREEN_ON);
     events.addAction(Intent.ACTION_USER_PRESENT);
+    events.addAction("android.intent.action.USER_SWITCHED");
     events.addAction(Intent.ACTION_WALLPAPER_CHANGED);
     events.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
     app.registerReceiver(
         new BroadcastReceiver() {
           @Override
           public void onReceive(Context c, Intent i) {
-            unlocked =
-                !Intent.ACTION_SCREEN_OFF.equals(i.getAction()) && !keyguard.isKeyguardLocked();
+            unlocked = !Intent.ACTION_SCREEN_OFF.equals(i.getAction()) && activeUserUnlocked();
             if (!unlocked
+                || "android.intent.action.USER_SWITCHED".equals(i.getAction())
                 || Intent.ACTION_WALLPAPER_CHANGED.equals(i.getAction())
                 || Intent.ACTION_CONFIGURATION_CHANGED.equals(i.getAction())) {
               wallpaper.clear();
@@ -95,6 +96,14 @@ final class ShadeRuntime
         main,
         Context.RECEIVER_NOT_EXPORTED);
     read();
+  }
+
+  private boolean activeUserUnlocked() {
+    android.os.UserManager users = app.getSystemService(android.os.UserManager.class);
+    return users != null
+        && users.isUserForeground()
+        && users.isUserUnlocked()
+        && !keyguard.isKeyguardLocked();
   }
 
   private void read() {
@@ -259,7 +268,7 @@ final class ShadeRuntime
     boolean next = expanded.getBoolean(v) && barState.getInt(v) == 0 && qs.getFloat(v) < .01f;
     if (next != open) {
       open = next;
-      unlocked = !keyguard.isKeyguardLocked();
+      unlocked = activeUserUnlocked();
       if (!next) safeRefresh();
       else schedule();
     }
