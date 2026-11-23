@@ -60,6 +60,7 @@ final class CompositorBlur {
     }
     try {
       if (region == null && !initialize(host)) return false;
+      if (lastRadius <= 0) region.setAlpha(255);
       if (lastRadius != radius) {
         setBlurRadius.invoke(region, radius);
         lastRadius = radius;
