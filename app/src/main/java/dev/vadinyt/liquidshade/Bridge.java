@@ -9,6 +9,7 @@ import org.json.JSONException;
 /** The companion owns its prefs. Only the installed SystemUI UID may publish process status. */
 public final class Bridge extends ContentProvider {
   static final String AUTH = "dev.vadinyt.liquidshade.bridge";
+  static final Uri PHOTO = Uri.parse("content://" + AUTH + "/photo");
   static final Uri CONFIG = Uri.parse("content://" + AUTH + "/config");
   static final Uri STATUS = Uri.parse("content://" + AUTH + "/status");
   static final Uri PING = Uri.parse("content://" + AUTH + "/ping");
@@ -54,6 +55,11 @@ public final class Bridge extends ContentProvider {
     Bundle out = new Bundle();
     if ("read".equals(method)) {
       out.putString("config", p.getString("config", new Config().encode()));
+      out.putLong("photoRevision", p.getLong("photoRevision", 0));
+      out.putBoolean(
+          "photo",
+          getContext().getSystemService(UserManager.class).isUserUnlocked()
+              && BackdropPhoto.exists(c));
       out.putBoolean("blocked", p.getInt("failures", 0) >= 3);
     } else if ("failure".equals(method)) {
       int count = Math.min(3, p.getInt("failures", 0) + 1);
@@ -66,12 +72,27 @@ public final class Bridge extends ContentProvider {
           .putInt("hooks", in.getInt("hooks"))
           .putInt("surfaces", in.getInt("surfaces"))
           .putBoolean("open", in.getBoolean("open"))
-          .putBoolean("lens", in.getBoolean("lens"))
+          .putInt("cardBackend", in.getInt("cardBackend"))
+          .putInt("mediaBackend", in.getInt("mediaBackend"))
+          .putInt("motionEvents", in.getInt("motionEvents"))
+          .putInt("lastMounted", in.getInt("lastMounted"))
+          .putInt("source", in.getInt("source"))
           .putLong("stamp", SystemClock.elapsedRealtime())
           .apply();
       c.getContentResolver().notifyChange(STATUS, null);
     } else throw new IllegalArgumentException("method");
     return out;
+  }
+
+  @Override
+  public ParcelFileDescriptor openFile(Uri uri, String mode) throws java.io.FileNotFoundException {
+    Context c = getContext();
+    requireCaller(c);
+    if (!PHOTO.equals(uri)
+        || !"r".equals(mode)
+        || !c.getSystemService(UserManager.class).isUserUnlocked())
+      throw new java.io.FileNotFoundException("Unavailable");
+    return BackdropPhoto.open(c);
   }
 
   @Override
@@ -81,7 +102,7 @@ public final class Bridge extends ContentProvider {
 
   @Override
   public String getType(Uri u) {
-    return null;
+    return PHOTO.equals(u) ? "image/webp" : null;
   }
 
   @Override

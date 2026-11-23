@@ -12,8 +12,11 @@ final class Preview extends View {
   private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
   private final Material[] layers;
   private final RectF area = new RectF();
+  private final Bitmap[] demo;
+  private long photoRevision = Long.MIN_VALUE;
   private Config c;
-  private float x = .50f;
+  private float x = .50f, downX, startX;
+  private boolean dragged;
   Material.Kind mode = Material.Kind.CARD;
 
   Preview(Context ctx, Config config) {
@@ -39,26 +42,65 @@ final class Preview extends View {
     canvas.drawPaint(p);
     p.setShader(null);
     Path band = new Path();
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 8; i++) {
       band.rewind();
-      float y = 36 + i * 36;
+      float y = 8 + i * 28;
       band.moveTo(-20, y + 70);
       band.cubicTo(170, y - 100, 420, y + 120, 750, y - 55);
       p.setStyle(Paint.Style.STROKE);
-      p.setStrokeWidth(i == 2 ? 13 : 3);
-      p.setColor(i == 2 ? 0xffe5d0b3 : 0x8884c7d1);
+      p.setStrokeWidth(i == 2 || i == 5 ? 15 : 4);
+      p.setColor(i == 2 ? 0xffffdcb3 : i == 5 ? 0xff2e6378 : 0xbbabd9de);
       canvas.drawPath(band, p);
     }
     p.setStyle(Paint.Style.FILL);
     source.image = b;
-    source.levels = WallpaperSource.pyramid(b);
+    demo = WallpaperSource.pyramid(b);
+    source.levels = demo;
     source.luminance = .46f;
     setClipToOutline(true);
   }
 
+  void reloadPhoto() {
+    Context ctx = getContext().getApplicationContext();
+    long revision = Bridge.prefs(ctx).getLong("photoRevision", 0);
+    if (photoRevision == revision) return;
+    photoRevision = revision;
+    if (!BackdropPhoto.exists(ctx)) {
+      usePreview(demo);
+      return;
+    }
+    new Thread(
+            () -> {
+              try {
+                Bitmap image =
+                    BackdropPhoto.decode(
+                        ImageDecoder.createSource(ctx.getContentResolver(), Bridge.PHOTO), 840);
+                Bitmap[] levels = WallpaperSource.pyramid(image);
+                post(
+                    () -> {
+                      if (photoRevision == revision) usePreview(levels);
+                    });
+              } catch (java.io.IOException | RuntimeException | OutOfMemoryError ignored) {
+                post(
+                    () -> {
+                      if (photoRevision == revision) usePreview(demo);
+                    });
+              }
+            },
+            "LiquidShade preview")
+        .start();
+  }
+
+  private void usePreview(Bitmap[] levels) {
+    source.image = levels[0];
+    source.levels = levels;
+    source.luminance = WallpaperSource.measureLight(levels[levels.length - 1]);
+    invalidate();
+  }
+
   void config(Config next) {
     c = next;
-    for (Material m : layers) m.cfg = c;
+    for (Material m : layers) m.configure(c);
     invalidate();
   }
 
@@ -95,6 +137,7 @@ final class Preview extends View {
                 mode == Material.Kind.MEDIA
                     ? MEDIA_ON
                     : mode == Material.Kind.FOOTER ? FOOTER : CARDS_ON);
+    glass.allowTexture = c.on(SHADE_ON);
     if (active) glass.draw(canvas);
     else {
       p.setColor(0xff37414b);
@@ -132,19 +175,38 @@ final class Preview extends View {
 
   @Override
   public boolean onTouchEvent(MotionEvent e) {
-    if (e.getActionMasked() == MotionEvent.ACTION_DOWN) {
+    Material lens = layers[mode.ordinal()];
+    Rect bounds = lens.getBounds();
+    int action = e.getActionMasked();
+    if (action == MotionEvent.ACTION_DOWN) {
+      if (!bounds.contains((int) e.getX(), (int) e.getY())) return false;
+      downX = e.getX();
+      startX = x;
+      dragged = false;
       getParent().requestDisallowInterceptTouchEvent(true);
-      if (c.on(PRESS)) layers[mode.ordinal()].pulse(.85f);
+    } else if (action == MotionEvent.ACTION_MOVE) {
+      float dx = e.getX() - downX;
+      if (Math.abs(dx) > ViewConfiguration.get(getContext()).getScaledTouchSlop()) dragged = true;
+      if (dragged) x = Math.max(0f, Math.min(1f, startX + dx / Math.max(1, getWidth())));
     }
-    x = Math.max(0f, Math.min(1f, e.getX() / Math.max(1, getWidth())));
+    lens.touch(
+        action,
+        Math.max(
+            -1f,
+            Math.min(1f, (e.getX() - bounds.exactCenterX()) * 2 / Math.max(1, bounds.width()))),
+        Math.max(
+            -1f,
+            Math.min(1f, (e.getY() - bounds.exactCenterY()) * 2 / Math.max(1, bounds.height()))));
+    if (action == MotionEvent.ACTION_UP || action == MotionEvent.ACTION_CANCEL) {
+      getParent().requestDisallowInterceptTouchEvent(false);
+      if (action == MotionEvent.ACTION_UP && !dragged) performClick();
+    }
     invalidate();
-    if (e.getActionMasked() == MotionEvent.ACTION_UP) {
-      getParent().requestDisallowInterceptTouchEvent(false);
-      performClick();
-    }
-    if (e.getActionMasked() == MotionEvent.ACTION_CANCEL)
-      getParent().requestDisallowInterceptTouchEvent(false);
     return true;
+  }
+
+  void replay() {
+    layers[mode.ordinal()].pulse(1f);
   }
 
   @Override

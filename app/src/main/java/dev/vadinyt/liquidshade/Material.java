@@ -25,7 +25,7 @@ final class Material extends GradientDrawable {
   private final WeakReference<View> owner, anchor;
   final WallpaperSource source;
   Config cfg;
-  boolean drewTexture, grouped, darkText, edgeOnly, allowTexture = true, shaderFailed;
+  boolean grouped, darkText, edgeOnly, allowTexture = true, shaderFailed;
   int artwork;
   private final RectF box = new RectF();
   private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
@@ -33,9 +33,33 @@ final class Material extends GradientDrawable {
       rootToScreen = new Matrix(),
       inverseRoot = new Matrix(),
       relative = new Matrix();
+  private final float[] artMatrix = new float[9], artUV = new float[4];
   private final float[] nextMap = new float[9], currentMap = new float[9];
   private boolean mapped;
-  private Bitmap bound;
+  private Bitmap bound, fullBound;
+  private final Shader blank = new LinearGradient(0, 0, 1, 0, 0, 0, Shader.TileMode.CLAMP);
+  private final LensSpring physics = new LensSpring();
+
+  interface Events {
+    void drawn(Material material, int backend);
+
+    void motion();
+  }
+
+  Events events;
+  static final int CANVAS = 1, SURFACE = 2, TEXTURE = 3, ARTWORK = 4;
+  private int lastBackend;
+
+  private void rendered(int backend) {
+    if (lastBackend != backend) {
+      lastBackend = backend;
+      if (events != null) events.drawn(this, backend);
+    }
+  }
+
+  private float fingerX = -.5f, fingerY = -.65f;
+  private boolean contact;
+
   private BitmapShader sampler;
   private RuntimeShader program;
   private final NativeBlur nativeBlur = new NativeBlur();
@@ -80,6 +104,11 @@ final class Material extends GradientDrawable {
   }
 
   @Override
+  public int getOpacity() {
+    return PixelFormat.TRANSLUCENT;
+  }
+
+  @Override
   public boolean isStateful() {
     return true;
   }
@@ -88,12 +117,39 @@ final class Material extends GradientDrawable {
   protected boolean onStateChange(int[] states) {
     boolean down = false;
     for (int state : states) if (state == android.R.attr.state_pressed) down = true;
-    if (down != pressed && cfg != null && cfg.on(PRESS)) pulse(down ? 1f : -.45f);
+    // The notification row owns touch dispatch. Drawable state also supports footer buttons.
+    if (kind == Kind.FOOTER && down != pressed && cfg != null) touch(down ? 0 : 1, 0, -.4f);
     pressed = down;
     return super.onStateChange(states);
   }
 
+  void touch(int action, float x, float y) {
+    if (!cfg.on(PRESS) || !cfg.on(MOTION_ON)) return;
+    if (action == 0) {
+      contact = true;
+      fingerX = x;
+      fingerY = y;
+      animate(1, 4);
+    } else if (action == 2 && contact) {
+      fingerX = x;
+      fingerY = y;
+      View v = owner.get();
+      if (v != null && spring != null && ValueAnimator.areAnimatorsEnabled()) v.invalidate();
+    } else if ((action == 1 || action == 3) && contact) {
+      contact = false;
+      animate(0, -4);
+    }
+  }
+
   void pulse(float impulse) {
+    if (!contact) {
+      fingerX = -.42f;
+      fingerY = -.7f;
+    }
+    animate(contact ? 1 : 0, impulse * 25);
+  }
+
+  private void animate(float target, float impulse) {
     View v = owner.get();
     if (v == null
         || !cfg.on(MOTION_ON)
@@ -102,28 +158,45 @@ final class Material extends GradientDrawable {
     float scale =
         cfg.on(REDUCE)
             ? Settings.Global.getFloat(
-                v.getContext().getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
-            : 1f;
-    if (scale <= 0) return;
+                v.getContext().getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1)
+            : 1;
     android.view.accessibility.AccessibilityManager access =
         v.getContext().getSystemService(android.view.accessibility.AccessibilityManager.class);
-    if (cfg.on(REDUCE) && access != null && access.isTouchExplorationEnabled()) return;
-    final float magnitude = impulse * (cfg.on(REDUCE) ? Math.min(1f, scale) : 1f);
-    if (spring != null) spring.cancel();
-    float k = 7f + cfg.unit(STIFFNESS) * 15f, z = .32f + cfg.unit(DAMPING) * .65f;
-    spring = ValueAnimator.ofFloat(0f, 1f);
-    spring.setInterpolator(new android.view.animation.LinearInterpolator());
-    spring.setDuration((long) (760 - 440 * cfg.unit(SPEED)));
-    spring.addUpdateListener(
-        a -> {
-          float t = a.getAnimatedFraction();
-          response =
-              magnitude
-                  * (float) (Math.exp(-z * k * t) * Math.sin(k * t * Math.sqrt(1 - z * z)))
-                  * (1f - t);
-          v.invalidate();
-        });
+    if (scale <= 0 || (cfg.on(REDUCE) && access != null && access.isTouchExplorationEnabled()))
+      return;
+    if (spring == null) {
+      spring = ValueAnimator.ofFloat(0, 1);
+      spring.setInterpolator(new android.view.animation.LinearInterpolator());
+      spring.addUpdateListener(
+          a -> {
+            float t = a.getAnimatedFraction();
+            if (t >= .9999f) physics.finish();
+            else physics.sample(t * 1.05f);
+            response = Math.max(-.7f, Math.min(1.4f, physics.value));
+            View host = owner.get();
+            if (host != null) host.invalidate();
+          });
+    } else spring.cancel();
+    float goal = target * Math.min(scale, 1f);
+    physics.target(goal, impulse * Math.min(1, scale), cfg.unit(STIFFNESS), cfg.unit(DAMPING));
+    spring.setDuration((long) (1050 / (.65f + 1.5f * cfg.unit(SPEED))));
     spring.start();
+    if (events != null) events.motion();
+  }
+
+  boolean hasDrawnBackdrop() {
+    return lastBackend == TEXTURE && fullBound != null && fullBound == source.image;
+  }
+
+  void configure(Config next) {
+    if ((!next.on(MOTION_ON) || next.get(PERFORMANCE) == 2 || (contact && !next.on(PRESS)))
+        && (contact || response != 0 || (spring != null && spring.isRunning()))) {
+      if (spring != null) spring.cancel();
+      contact = false;
+      response = 0;
+      physics.reset();
+    }
+    cfg = next;
   }
 
   boolean anchoredAt(View v) {
@@ -134,12 +207,16 @@ final class Material extends GradientDrawable {
     nativeBlur.suspend();
     if (spring != null) spring.cancel();
     response = 0;
+    contact = false;
+    physics.reset();
+    lastBackend = 0;
   }
 
   void release() {
     suspend();
     if (spring != null) spring.cancel();
     bound = null;
+    fullBound = null;
     sampler = null;
     program = null;
     paint.setShader(null);
@@ -179,6 +256,50 @@ final class Material extends GradientDrawable {
     return true;
   }
 
+  /**
+   * ImageView draws its bitmap inside drawable bounds, then applies the image matrix and padding.
+   * Only accept an opaque full-bleed mapping whose exact pixels we can reconstruct.
+   */
+  private Bitmap artworkSource(android.widget.ImageView v) {
+    if (!(v.getDrawable() instanceof BitmapDrawable d)
+        || d.getGravity() != android.view.Gravity.FILL
+        || d.getTileModeX() != null
+        || d.getTileModeY() != null
+        || d.getAlpha() != 255
+        || d.getColorFilter() != null
+        || v.getImageTintList() != null
+        || v.getColorFilter() != null
+        || d.isAutoMirrored()
+        || d.getPaint().getShader() != null) return null;
+    Bitmap b = d.getBitmap();
+    Rect bounds = d.getBounds();
+    if (b == null || b.isRecycled() || bounds.isEmpty()) return null;
+    v.getImageMatrix().getValues(artMatrix);
+    if (artMatrix[0] <= 0
+        || artMatrix[4] <= 0
+        || artMatrix[1] != 0
+        || artMatrix[3] != 0
+        || artMatrix[6] != 0
+        || artMatrix[7] != 0
+        || artMatrix[8] != 1) return null;
+    float left = v.getPaddingLeft() + artMatrix[2] + artMatrix[0] * bounds.left;
+    float top = v.getPaddingTop() + artMatrix[5] + artMatrix[4] * bounds.top;
+    float w = bounds.width() * artMatrix[0], h = bounds.height() * artMatrix[4];
+    if (left > .5f || top > .5f || left + w < v.getWidth() - .5f || top + h < v.getHeight() - .5f)
+      return null;
+    artUV[0] = b.getWidth() / w;
+    artUV[1] = b.getHeight() / h;
+    artUV[2] = -left * artUV[0];
+    artUV[3] = -top * artUV[1];
+    return b;
+  }
+
+  private static BitmapShader filtered(Bitmap bitmap) {
+    BitmapShader sample = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
+    sample.setFilterMode(BitmapShader.FILTER_MODE_LINEAR);
+    return sample;
+  }
+
   private static float ch(int color, int shift) {
     return ((color >> shift) & 255) / 255f;
   }
@@ -200,12 +321,19 @@ final class Material extends GradientDrawable {
     float radius =
         field ? 0 : Math.min(limit, dp * (6 + 44 * cfg.unit(media ? MEDIA_RADIUS : CARD_RADIUS)));
     if (kind == Kind.FOOTER) radius = limit;
+    float movement = cfg.on(MOTION_ON) && cfg.get(PERFORMANCE) != 2 ? response : 0;
+    if (!field && movement != 0) {
+      // Optical squeeze happens inside the native hit target. Artwork and text keep their geometry.
+      float squeeze = Math.max(0f, movement);
+      box.inset(dp * 1.5f * squeeze, dp * 1.9f * squeeze);
+      radius = Math.max(0, Math.min(limit, radius + dp * 3 * movement));
+    }
     float top = radius, bottom = radius;
     if (card && grouped && cfg.get(GROUPS) == 1) {
       top = Math.min(radius, dp * 11);
       bottom = top;
     }
-    if (card && cfg.get(GROUPS) != 2) {
+    if (card && grouped && cfg.get(GROUPS) != 2) {
       if (!Float.isNaN(topOem)) top = Math.min(top, topOem);
       if (!Float.isNaN(bottomOem)) bottom = Math.min(bottom, bottomOem);
     }
@@ -234,7 +362,12 @@ final class Material extends GradientDrawable {
     float shadeBlur = cfg.on(SHADE_ON) ? cfg.unit(SHADE_BLUR) : 0f;
     float spread =
         dp
-            * (20 * shadeBlur + (field ? 0 : 15 * cfg.unit(media ? MEDIA_BLUR : BLUR)))
+            * (16 * shadeBlur * shadeBlur
+                + (field
+                    ? 0
+                    : 22
+                        * cfg.unit(media ? MEDIA_BLUR : BLUR)
+                        * cfg.unit(media ? MEDIA_BLUR : BLUR)))
             * (adaptive && source.luminance > .65f ? 1.1f : 1);
     int mode = cfg.get(PERFORMANCE), highlight = cfg.get(HIGHLIGHT), sc = cfg.get(SHADE_COLOR);
     float dim = cfg.on(SHADE_ON) ? cfg.unit(DIM) * .60f : 0,
@@ -244,40 +377,69 @@ final class Material extends GradientDrawable {
         card && cfg.on(CONTRAST)
             ? (darkText ? 1f - source.luminance : source.luminance) * .32f
             : 0f;
-    Bitmap bitmap = allowTexture ? source.forBlur(spread, frame.getWidth()) : null;
-    if (bitmap != null) positionChanged();
+    Bitmap bitmap =
+        allowTexture ? source.forBlur(spread, frame.getWidth(), frame.getHeight()) : null;
+    Bitmap album =
+        media && edgeOnly && v instanceof android.widget.ImageView cover
+            ? artworkSource(cover)
+            : null;
+    if (album != null) bitmap = album;
+    boolean hasImage = bitmap != null;
+    if (hasImage || !field) positionChanged();
     if (mapped
-        && bitmap != null
+        && (hasImage || !field)
         && !shaderFailed
         && canvas.isHardwareAccelerated()
         && frame.getWidth() > 0
         && frame.getHeight() > 0) {
       try {
         nativeBlur.suspend();
-        if (program == null) program = new RuntimeShader(LensProgram.SOURCE);
+        if (program == null) {
+          program = new RuntimeShader(LensProgram.SOURCE);
+          program.setInputShader("src", blank);
+          program.setInputShader("clearSrc", blank);
+        }
         if (bound != bitmap) {
-          sampler = new BitmapShader(bitmap, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP);
-          sampler.setFilterMode(BitmapShader.FILTER_MODE_LINEAR);
-          program.setInputShader("src", sampler);
+          sampler = bitmap == null ? null : filtered(bitmap);
+          program.setInputShader("src", sampler == null ? blank : sampler);
           bound = bitmap;
         }
-
+        Bitmap full = album != null ? album : hasImage ? source.image : null;
+        if (fullBound != full) {
+          if (field) lastBackend = 0;
+          program.setInputShader("clearSrc", full == null ? blank : filtered(full));
+          fullBound = full;
+        }
         float bevel =
-            Math.min(limit, dp * (1 + 17 * cfg.unit(BEVEL)) * (1 + .28f * cfg.unit(DEPTH)));
+            Math.min(limit, dp * (1.5f + 19 * cfg.unit(BEVEL)) * (.8f + .6f * cfg.unit(DEPTH)));
         float displacement =
             field
                 ? 0
-                : dp * (1 + 11 * cfg.unit(DEPTH)) * cfg.unit(media ? MEDIA_REFRACTION : REFRACTION);
+                : dp * (2 + 20 * cfg.unit(DEPTH)) * cfg.unit(media ? MEDIA_REFRACTION : REFRACTION);
         program.setFloatUniform("center", box.centerX(), box.centerY());
         program.setFloatUniform("extent", box.width() / 2, box.height() / 2);
         program.setFloatUniform("mapX", currentMap[0], currentMap[1], currentMap[2]);
         program.setFloatUniform("mapY", currentMap[3], currentMap[4], currentMap[5]);
         program.setFloatUniform("mapW", currentMap[6], currentMap[7], currentMap[8]);
         program.setFloatUniform("frame", (float) frame.getWidth(), (float) frame.getHeight());
-        program.setFloatUniform("texture", (float) bitmap.getWidth(), (float) bitmap.getHeight());
+        program.setFloatUniform(
+            "texture",
+            hasImage ? (float) bitmap.getWidth() : 1f,
+            hasImage ? (float) bitmap.getHeight() : 1f);
+        program.setFloatUniform(
+            "fullSize",
+            hasImage ? (float) full.getWidth() : 1f,
+            hasImage ? (float) full.getHeight() : 1f);
+        program.setFloatUniform(
+            "surface", fingerX, fingerY, album != null ? 2 : hasImage ? 1 : 0, dp);
+        program.setFloatUniform("artUV", artUV[0], artUV[1], artUV[2], artUV[3]);
         program.setFloatUniform("radii", top, bottom);
         program.setFloatUniform(
-            "optic", displacement, bevel, cfg.unit(COMPRESSION), mode == 2 ? 0 : spread * .42f);
+            "optic",
+            displacement,
+            bevel,
+            field ? 0 : cfg.unit(COMPRESSION),
+            mode == 2 ? 0 : spread * .42f);
         program.setFloatUniform(
             "finish",
             field || mode == 2 ? 0f : dp * (mode == 0 ? .85f : .55f) * cfg.unit(DISPERSION),
@@ -293,21 +455,26 @@ final class Material extends GradientDrawable {
         program.setFloatUniform("accent", ch(tint, 16), ch(tint, 8), ch(tint, 0), 1);
         program.setFloatUniform("shade", ch(sc, 16), ch(sc, 8), ch(sc, 0), shadeTint);
         program.setFloatUniform("wash", dim, grade, darkText ? 1f : 0f, 0);
-        program.setFloatUniform("flags", ch(highlight, 16), ch(highlight, 8), ch(highlight, 0), 0);
         program.setFloatUniform(
-            "detail", alpha / 255f, edgeOnly ? Math.max(2f, bevel) : 0f, response, contrast);
+            "flags",
+            ch(highlight, 16),
+            ch(highlight, 8),
+            ch(highlight, 0),
+            field || mode == 2 ? 0 : mode == 0 ? .94f : .76f);
+        program.setFloatUniform(
+            "detail", alpha / 255f, edgeOnly ? Math.max(2f, bevel) : 0f, movement, contrast);
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(Color.WHITE);
         paint.setShader(program);
         canvas.drawRect(box, paint);
-        drewTexture = true;
+        rendered(album != null ? ARTWORK : hasImage ? TEXTURE : SURFACE);
         return;
       } catch (RuntimeException | OutOfMemoryError e) {
         shaderFailed = true;
         release();
       }
     }
-    drewTexture = false;
+    rendered(CANVAS);
     // Native transparency preserves Samsung's existing compositor blur where available.
     paint.setShader(null);
     paint.setStyle(Paint.Style.FILL);

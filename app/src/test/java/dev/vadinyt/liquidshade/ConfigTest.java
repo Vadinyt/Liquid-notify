@@ -34,6 +34,23 @@ public class ConfigTest {
   }
 
   @Test
+  public void materialPresetsPreserveSwitchesAndGroupGeometry() {
+    Config c = new Config();
+    c.set(Option.SHADE_ON, 0);
+    c.set(Option.PRESS, 0);
+    c.set(Option.GROUPS, 2);
+    c.select(0);
+    int clearBlur = c.get(Option.MEDIA_BLUR);
+    c.select(2);
+    assertTrue(c.get(Option.MEDIA_BLUR) > clearBlur);
+    assertFalse(c.on(Option.SHADE_ON));
+    assertFalse(c.on(Option.PRESS));
+    assertEquals(2, c.get(Option.GROUPS));
+    c.select(1);
+    assertEquals(Option.REFRACTION.initial, c.get(Option.REFRACTION));
+  }
+
+  @Test
   public void badImportIsRejected() throws Exception {
     JSONObject data = new JSONObject(new Config().encode()).put("BEVEL", 101);
     assertThrows(JSONException.class, () -> Config.decode(data.toString()));

@@ -33,21 +33,32 @@ final class Config {
   void select(int index) {
     preset = index;
     if (index == 4) return;
-    for (Option o : OPTIONS) {
-      if (o.section == R.string.optics
-          || o.section == R.string.cards
-          || o.section == R.string.media
-          || o.section == R.string.shade) set(o, o.initial);
-    }
-    if (index == 3) set(BASE_COLOR, 0xff263242);
-    int[][] table = {
-      {61, 10, 10, 12, 8, 17},
-      {52, 22, 16, 24, 15, 33},
-      {34, 80, 43, 49, 19, 65},
-      {49, 34, 62, 55, 57, 42}
+    set(BASE_COLOR, index == 3 ? 0xff263242 : BASE_COLOR.initial);
+    Option[] params = {
+      REFRACTION,
+      BLUR,
+      COMPRESSION,
+      DEPTH,
+      BEVEL,
+      DISPERSION,
+      REFLECTION,
+      RIM,
+      TINT,
+      CARD_OPACITY,
+      DIM,
+      SHADE_BLUR,
+      MEDIA_BLUR,
+      MEDIA_REFRACTION,
+      MEDIA_OPACITY,
+      MEDIA_RIM
     };
-    Option[] params = {REFRACTION, BLUR, TINT, CARD_OPACITY, DIM, SHADE_BLUR};
-    for (int i = 0; i < params.length; i++) set(params[i], table[index][i]);
+    int[][] values = {
+      {79, 8, 68, 70, 49, 14, 53, 72, 5, 9, 6, 12, 8, 67, 10, 64},
+      {52, 22, 48, 52, 39, 12, 36, 55, 16, 24, 15, 33, 16, 43, 22, 49},
+      {42, 78, 43, 63, 57, 8, 64, 69, 35, 39, 10, 53, 65, 44, 31, 65},
+      {62, 28, 65, 69, 50, 10, 54, 67, 70, 65, 34, 28, 31, 52, 52, 68}
+    };
+    for (int i = 0; i < params.length; i++) set(params[i], values[index][i]);
   }
 
   String encode() {

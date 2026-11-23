@@ -105,6 +105,7 @@ public final class SettingsActivity extends Activity {
   @Override
   protected void onResume() {
     super.onResume();
+    preview.reloadPhoto();
     getContentResolver().registerContentObserver(Bridge.STATUS, false, observer);
     ping();
   }
@@ -155,6 +156,7 @@ public final class SettingsActivity extends Activity {
     b.setAllCaps(false);
     b.setText(s);
     b.setTextColor(WHITE);
+    b.setBackgroundTintList(ColorStateList.valueOf(0xff253540));
     b.setOnClickListener(v -> click.run());
     return b;
   }
@@ -192,6 +194,7 @@ public final class SettingsActivity extends Activity {
         section == 3
             ? Material.Kind.MEDIA
             : section == 4 ? Material.Kind.FOOTER : Material.Kind.CARD;
+    preview.reloadPhoto();
     preview.config(cfg);
     if (section == 0)
       choice(
@@ -203,6 +206,30 @@ public final class SettingsActivity extends Activity {
             changed();
             render();
           });
+    if (section == 1 || section == 4) {
+      TextView hint =
+          text(getString(section == 1 ? R.string.optics_hint : R.string.photo_hint), 14, MUTED);
+      hint.setPadding(dp(8), dp(8), dp(8), dp(12));
+      rows.addView(hint);
+    }
+    if (section == 4) {
+      command(
+          R.string.choose_photo,
+          () ->
+              startActivityForResult(
+                  new Intent(Intent.ACTION_OPEN_DOCUMENT)
+                      .addCategory(Intent.CATEGORY_OPENABLE)
+                      .setType("image/*"),
+                  63));
+      if (BackdropPhoto.exists(this))
+        command(
+            R.string.clear_photo,
+            () -> {
+              BackdropPhoto.clear(this);
+              render();
+            });
+    }
+    if (section == 5) command(R.string.replay, preview::replay);
     for (Option o : Config.OPTIONS) if (o.section == SECTIONS[section]) control(o);
     if (section == 0)
       command(
@@ -431,22 +458,44 @@ public final class SettingsActivity extends Activity {
               + getString(R.string.surfaces)
               + "  "
               + p.getInt("surfaces", 0)
-              + "\n"
+              + "  ·  "
+              + getString(R.string.last_mount)
+              + "  "
+              + p.getInt("lastMounted", 0);
+      state +=
+          "\n"
+              + getString(R.string.backdrop)
+              + "  ·  "
               + getString(
-                  p.getBoolean("open", false)
-                      ? (p.getBoolean("lens", false) ? R.string.wall : R.string.fallback)
-                      : R.string.standby);
-      if (!p.getBoolean("open", false))
-        state +=
-            "\n"
-                + getString(R.string.last_backend)
-                + "  ·  "
-                + getString(p.getBoolean("lens", false) ? R.string.wall : R.string.fallback);
+                  switch (p.getInt("source", 0)) {
+                    case WallpaperSource.SYSTEM -> R.string.source_system;
+                    case WallpaperSource.PHOTO -> R.string.source_photo;
+                    case WallpaperSource.LIVE -> R.string.source_live;
+                    case WallpaperSource.DENIED -> R.string.source_denied;
+                    case WallpaperSource.UNREADABLE -> R.string.source_unreadable;
+                    default -> R.string.unseen;
+                  });
+      state += "\n" + getString(R.string.last_card) + "  ·  " + backend(p.getInt("cardBackend", 0));
+      state +=
+          "\n" + getString(R.string.last_media) + "  ·  " + backend(p.getInt("mediaBackend", 0));
+      state += "\n" + getString(R.string.impulses) + "  ·  " + p.getInt("motionEvents", 0);
+      if (!p.getBoolean("open", false)) state += "\n" + getString(R.string.standby);
     }
     state +=
         "\n"
             + getString(p.getInt("failures", 0) >= 3 ? R.string.blocked : R.string.protected_state);
     status.setText(state);
+  }
+
+  private String backend(int code) {
+    return getString(
+        switch (code) {
+          case Material.CANVAS -> R.string.backend_canvas;
+          case Material.SURFACE -> R.string.backend_surface;
+          case Material.TEXTURE -> R.string.backend_texture;
+          case Material.ARTWORK -> R.string.backend_art;
+          default -> R.string.unseen;
+        });
   }
 
   private void document(boolean export) {
@@ -463,6 +512,29 @@ public final class SettingsActivity extends Activity {
     super.onActivityResult(code, result, data);
     if (result != RESULT_OK || data == null || data.getData() == null) return;
     Uri uri = data.getData();
+    if (code == 63) {
+      Context ctx = getApplicationContext();
+      new Thread(
+              () -> {
+                boolean ok = false;
+                try {
+                  BackdropPhoto.replace(ctx, uri);
+                  ok = true;
+                } catch (IOException | RuntimeException | OutOfMemoryError ignored) {
+                }
+                final boolean success = ok;
+                runOnUiThread(
+                    () -> {
+                      if (!isFinishing() && !isDestroyed()) {
+                        toast(success ? R.string.success : R.string.failed);
+                        render();
+                      }
+                    });
+              },
+              "LiquidShade image")
+          .start();
+      return;
+    }
     try {
       if (code == 61) {
         try (OutputStream out = getContentResolver().openOutputStream(uri, "wt")) {

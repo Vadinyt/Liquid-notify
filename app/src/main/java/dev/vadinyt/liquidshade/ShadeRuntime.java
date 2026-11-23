@@ -20,7 +20,8 @@ import java.util.concurrent.*;
 final class ShadeRuntime
     implements View.OnAttachStateChangeListener,
         View.OnLayoutChangeListener,
-        ViewTreeObserver.OnPreDrawListener {
+        ViewTreeObserver.OnPreDrawListener,
+        Material.Events {
   Field expanded, barState, qs, background, onLock, headsUp;
   Method child;
   boolean stackCompatible, cardCompatible, mediaCompatible, footerCompatible;
@@ -42,10 +43,12 @@ final class ShadeRuntime
       requested,
       queued,
       reportQueued,
-      lastLens,
+      customPhoto,
       hardPaused;
   private int localFailures, revision;
-  private long lastFailure;
+  private long lastFailure, photoRevision, lastBackdropRequest;
+  private int cardBackend, mediaBackend, sourceLast, lastMounted, motionEvents;
+  private final WeakHashMap<View, WeakReference<View>> rowBackgrounds = new WeakHashMap<>();
   private KeyguardManager keyguard;
 
   void connect(Context context) {
@@ -88,6 +91,8 @@ final class ShadeRuntime
               wallpaper.clear();
               requested = false;
             }
+            if (Intent.ACTION_USER_PRESENT.equals(i.getAction())
+                || "android.intent.action.USER_SWITCHED".equals(i.getAction())) read();
             safeRefresh();
           }
         },
@@ -117,10 +122,16 @@ final class ShadeRuntime
             main.post(
                 () -> {
                   if (version != revision) return;
-                  if (next.get(PERFORMANCE) != cfg.get(PERFORMANCE)) {
+                  boolean photo = b.getBoolean("photo");
+                  long stamp = b.getLong("photoRevision");
+                  if (next.get(PERFORMANCE) != cfg.get(PERFORMANCE)
+                      || customPhoto != photo
+                      || photoRevision != stamp) {
                     wallpaper.clear();
                     requested = false;
                   }
+                  customPhoto = photo;
+                  photoRevision = stamp;
                   cfg = next;
                   boolean previouslyBlocked = blocked;
                   blocked = b.getBoolean("blocked");
@@ -189,14 +200,8 @@ final class ShadeRuntime
     main.postDelayed(
         () -> {
           reportQueued = false;
-          boolean lens = false;
-          int count = 0;
-          for (Binding b : moving)
-            if (b.glass != null) {
-              count++;
-              if (b.glass.drewTexture) lens = true;
-            }
-          if (count > 0) lastLens = lens;
+          int count = moving.size();
+          if (count > 0) lastMounted = count;
           Bundle data = new Bundle();
           data.putInt("hooks", hooks);
           data.putInt("surfaces", count);
@@ -207,7 +212,11 @@ final class ShadeRuntime
                   | (mediaCompatible ? 4 : 0)
                   | (footerCompatible ? 8 : 0));
           data.putBoolean("open", open);
-          data.putBoolean("lens", lastLens);
+          data.putInt("lastMounted", lastMounted);
+          data.putInt("cardBackend", cardBackend);
+          data.putInt("mediaBackend", mediaBackend);
+          data.putInt("source", sourceLast);
+          data.putInt("motionEvents", motionEvents);
           worker.execute(
               () -> {
                 try {
@@ -217,6 +226,28 @@ final class ShadeRuntime
               });
         },
         90);
+  }
+
+  @Override
+  public void drawn(Material material, int backend) {
+    if (material.kind == SHADE) {
+      schedule();
+      return;
+    }
+    if (material.kind == CARD && backend != cardBackend) {
+      cardBackend = backend;
+      report();
+    }
+    if (material.kind == MEDIA && backend != mediaBackend) {
+      mediaBackend = backend;
+      report();
+    }
+  }
+
+  @Override
+  public void motion() {
+    motionEvents++;
+    report();
   }
 
   private int id(String name) {
@@ -232,9 +263,15 @@ final class ShadeRuntime
     return i == 0 ? null : root.findViewById(i);
   }
 
+  private static boolean classIs(View v, String type) {
+    for (Class<?> c = v.getClass(); c != null; c = c.getSuperclass())
+      if (c.getName().equals(type)) return true;
+    return false;
+  }
+
   private static View ancestor(View v, String type) {
     for (View a = v; a != null; a = a.getParent() instanceof View next ? next : null)
-      if (a.getClass().getName().equals(type)) return a;
+      if (classIs(a, type)) return a;
     return null;
   }
 
@@ -253,7 +290,10 @@ final class ShadeRuntime
       if (prior != null) drop(prior);
       stack = new WeakReference<>(v);
       View frame = ancestor(v, ShadeModule.PKG + ".shade.NotificationPanelView");
-      if (frame == null) frame = v;
+      if (frame == null
+          || (frame.getBackground() != null
+              && !(frame.getBackground() instanceof GradientDrawable
+                  || frame.getBackground() instanceof ColorDrawable))) frame = v;
       stage = new WeakReference<>(frame);
       register(frame, SHADE);
       v.addOnAttachStateChangeListener(this);
@@ -270,14 +310,20 @@ final class ShadeRuntime
       open = next;
       unlocked = activeUserUnlocked();
       if (!next) safeRefresh();
-      else schedule();
+      else {
+        if ((wallpaper.status == WallpaperSource.UNREADABLE
+                || wallpaper.status == WallpaperSource.DENIED)
+            && SystemClock.elapsedRealtime() - lastBackdropRequest > 60000) requested = false;
+        schedule();
+      }
     }
   }
 
   void row(View row) {
     connect(row.getContext());
     View bg = named(row, "backgroundNormal");
-    if (bg == null || !bg.getClass().getName().equals(ShadeModule.BG)) return;
+    if (bg == null || !classIs(bg, ShadeModule.BG)) return;
+    rowBackgrounds.put(row, new WeakReference<>(bg));
     register(bg, CARD);
     if (loaded) applyOne(bg);
   }
@@ -310,8 +356,23 @@ final class ShadeRuntime
 
   void motion(View row, float push) {
     if (app == null || !open) return;
-    Binding b = surfaces.get(named(row, "backgroundNormal"));
+    WeakReference<View> ref = rowBackgrounds.get(row);
+    Binding b = ref == null ? null : surfaces.get(ref.get());
     if (b != null && b.glass != null) b.glass.pulse(push);
+  }
+
+  void touch(View row, MotionEvent event) {
+    if (!open || !unlocked || hardPaused || !cfg.on(PRESS) || !cfg.on(MOTION_ON)) return;
+    WeakReference<View> ref = rowBackgrounds.get(row);
+    View bg = ref == null ? null : ref.get();
+    Binding b = bg == null ? null : surfaces.get(bg);
+    if (b == null || b.glass == null) return;
+    android.graphics.Rect bounds = b.glass.getBounds();
+    if (bounds.isEmpty()) return;
+    float x = (event.getX() - bg.getLeft() - bounds.exactCenterX()) * 2 / bounds.width();
+    float y = (event.getY() - bg.getTop() - bounds.exactCenterY()) * 2 / bounds.height();
+    b.glass.touch(
+        event.getActionMasked(), Math.max(-1, Math.min(1, x)), Math.max(-1, Math.min(1, y)));
   }
 
   private void register(View v, Material.Kind kind) {
@@ -383,13 +444,16 @@ final class ShadeRuntime
       View anchor = stage.get();
       if (open && anchor != null && cfg.on(SHADE_ON) && !requested) {
         requested = true;
+        lastBackdropRequest = SystemClock.elapsedRealtime();
         wallpaper.refresh(
-            app,
+            anchor.getContext(),
             worker,
             main,
             new int[] {1920, 1280, 720}[cfg.get(PERFORMANCE)],
+            customPhoto,
             this::safeRefresh);
       }
+      if (wallpaper.status != WallpaperSource.UNKNOWN) sourceLast = wallpaper.status;
       if (anchor != null) applyOne(anchor);
       for (View v : new ArrayList<>(surfaces.keySet())) if (v != null && v != anchor) applyOne(v);
       report();
@@ -467,7 +531,8 @@ final class ShadeRuntime
               ? b.idle
               : new Material(v, frame, wallpaper, cfg, b.kind);
       b.idle = null;
-      glass.cfg = cfg;
+      glass.events = this;
+      glass.configure(cfg);
       if (layer != null) {
         Drawable orig = layer.getDrawable(0);
         if (orig == null
@@ -507,7 +572,7 @@ final class ShadeRuntime
       moving.add(b);
     }
     Material g = b.glass;
-    g.cfg = cfg;
+    g.configure(cfg);
     g.grouped = grouped;
     Binding back = surfaces.get(frame);
     g.allowTexture =
@@ -517,7 +582,7 @@ final class ShadeRuntime
             && back.glass != null
             && back.owns(frame)
             && !back.glass.shaderFailed
-            && (v == frame || ancestorView(v, frame));
+            && (v == frame || (back.glass.hasDrawnBackdrop() && ancestorView(v, frame)));
     if (b.kind == CARD) {
       View row = ancestor(v, ShadeModule.ROW);
       View label = row == null ? null : row.findViewById(android.R.id.title);
@@ -552,8 +617,7 @@ final class ShadeRuntime
       View v = b.view.get();
       Material m = b.glass;
       if (b.kind == MEDIA && v instanceof ImageView art && b.artChanged(art)) schedule();
-      if (v != null && m != null && m.allowTexture && v.isShown() && m.positionChanged())
-        v.invalidate();
+      if (v != null && m != null && v.isShown() && m.positionChanged()) v.invalidate();
     }
     return true;
   }

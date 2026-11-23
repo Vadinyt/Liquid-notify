@@ -15,7 +15,11 @@ final class NativeBlur {
   private int lastRadius = -1;
 
   boolean draw(View owner, Canvas canvas, Rect bounds, int pixels) {
-    if (!canvas.isHardwareAccelerated() || pixels <= 0) return false;
+    if (pixels <= 0) {
+      suspend();
+      return false;
+    }
+    if (!canvas.isHardwareAccelerated()) return false;
     try {
       if (!attempted) {
         attempted = true;

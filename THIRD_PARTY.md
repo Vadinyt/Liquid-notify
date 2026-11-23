@@ -9,6 +9,8 @@ The aligned-image demonstration and shape-dependent displacement at https://liqu
 
 https://github.com/AurelioMo/glass-ui publishes a README and visual assets. It documents refractive wallpaper cards, Samsung blur handling, stacked groups and live settings. Its public tree contained no Android source when inspected. No Glass UI code or images are distributed here.
 
-https://github.com/QWEA0/Liquid-Glass-Android demonstrates SDF lenses and view-tree backdrop capture. This implementation uses its own shader and a deliberately narrower input restricted to an unlocked, static system wallpaper. No library code, demo images, or screenshots are redistributed.
+https://github.com/QWEA0/Liquid-Glass-Android demonstrates SDF lenses and view-tree backdrop capture. This implementation uses its own shader and a deliberately narrower input restricted to the unlocked shade backdrop and compatible album artwork. No library code, demo images, or screenshots are redistributed.
+
+The notification examples on https://liquidglassdesign.com/ informed the directional bevel and contact lighting in 1.1. No gallery images or code are included. Samsung’s published framework mirror at https://github.com/488315/samsung_framework was consulted for wallpaper type detection.
 
 Samsung SystemUI was inspected to identify methods, types and resource names for interoperability. No Samsung APK, DEX, XML, artwork, user screenshots, or notification data is included.

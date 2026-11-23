@@ -2,6 +2,7 @@ package dev.vadinyt.liquidshade;
 
 import android.app.Application;
 import android.os.Build;
+import android.view.MotionEvent;
 import android.view.View;
 import io.github.libxposed.api.XposedModule;
 import java.lang.reflect.*;
@@ -79,6 +80,25 @@ public final class ShadeModule extends XposedModule {
           r, "setUserExpanded", v -> runtime.motion((View) v, .65f), boolean.class, boolean.class);
       after(r, "setChildrenExpanded", v -> runtime.motion((View) v, .55f), boolean.class);
       after(r, "performDismiss", v -> runtime.motion((View) v, -.65f), boolean.class);
+    } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
+    }
+    try {
+      Class<?> activatable =
+          cl.loadClass(PKG + ".statusbar.notification.row.ActivatableNotificationView");
+      Method dispatch = activatable.getDeclaredMethod("dispatchTouchEvent", MotionEvent.class);
+      if (runtime.cardCompatible && dispatch.getReturnType() == boolean.class) {
+        hook(dispatch)
+            .intercept(
+                chain -> {
+                  try {
+                    runtime.touch((View) chain.getThisObject(), (MotionEvent) chain.getArg(0));
+                  } catch (RuntimeException | LinkageError | OutOfMemoryError e) {
+                    runtime.failure(e);
+                  }
+                  return chain.proceed();
+                });
+        runtime.hooks++;
+      }
     } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
     }
     try {

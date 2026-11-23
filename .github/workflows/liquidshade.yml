@@ -20,11 +20,19 @@ jobs:
           if [[ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" || ! -x "$ANDROID_HOME/build-tools/35.0.0/apksigner" ]]; then
             JAVA_HOME="${JAVA_HOME_21_X64:-$JAVA_HOME}" "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"
           fi
-      - name: Create a signing identity for this LiquidShade build
+      - name: Prepare LiquidShade signing identity
+        env:
+          LIQUIDSHADE_SIGNING_JKS_B64: ${{ secrets.LIQUIDSHADE_SIGNING_JKS_B64 }}
         run: |
+          set -euo pipefail
+          umask 077
           mkdir -p "$HOME/.android"
-          keytool -genkeypair -noprompt -storetype JKS -keystore "$RUNNER_TEMP/liquidshade.jks" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 3072 -validity 3650 -dname "CN=LiquidShade CI"
-          cp "$RUNNER_TEMP/liquidshade.jks" "$HOME/.android/debug.keystore"
+          if [[ -n "$LIQUIDSHADE_SIGNING_JKS_B64" ]]; then
+            printf '%s' "$LIQUIDSHADE_SIGNING_JKS_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+          else
+            keytool -genkeypair -noprompt -storetype JKS -keystore "$RUNNER_TEMP/liquidshade.jks" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 3072 -validity 3650 -dname "CN=LiquidShade CI"
+            cp "$RUNNER_TEMP/liquidshade.jks" "$HOME/.android/debug.keystore"
+          fi
       - name: Verify the lens pixel contract
         run: |
           sudo apt-get update -qq
@@ -37,14 +45,14 @@ jobs:
       - name: Verify and stage the signed APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/LiquidShade-1.0.0.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/LiquidShade-1.0.0.apk
-          test "$(unzip -p dist/LiquidShade-1.0.0.apk META-INF/xposed/scope.list)" = com.android.systemui
+          cp app/build/outputs/apk/debug/app-debug.apk dist/LiquidShade-1.1.0.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/LiquidShade-1.1.0.apk
+          test "$(unzip -p dist/LiquidShade-1.1.0.apk META-INF/xposed/scope.list)" = com.android.systemui
           cd dist
-          sha256sum LiquidShade-1.0.0.apk > SHA256SUMS
+          sha256sum LiquidShade-1.1.0.apk > SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: LiquidShade-1.0.0
+          name: LiquidShade-1.1.0
           path: dist/
           retention-days: 30
           if-no-files-found: error

@@ -14,17 +14,21 @@ pixels[:, :, 2] = 90
 image = skia.Image.fromarray(pixels, colorType=skia.ColorType.kRGBA_8888_ColorType)
 
 
-def render(shift, origin=(0, 0), dispersion=0.0, scale=1.0):
+def render(shift, origin=(0, 0), dispersion=0.0, scale=1.0, overrides=None, child=image):
     build = skia.RuntimeShaderBuilder(effect)
-    build.setChild("src", image.makeShader())
-    for key, value in {
+    build.setChild("src", child.makeShader())
+    build.setChild("clearSrc", child.makeShader())
+    uniforms = {
         "extent": (85, 48), "center": (120, 80), "mapX": (scale, 0, origin[0]),
         "mapY": (0, scale, origin[1]), "mapW": (0, 0, 1),
         "frame": (240, 160), "texture": (240, 160), "radii": (18, 18),
         "optic": (shift, 14, .6, 0), "finish": (dispersion, 0, 0, 0),
         "tone": (1, 0, 0, 0), "accent": (1, 1, 1, 1), "shade": (0, 0, 0, 0),
-        "wash": (0, 0, 0, 0), "flags": (1, 1, 1, 0), "detail": (1, 0, 0, 0),
-    }.items():
+        "wash": (0, 0, 0, 0), "flags": (1, 1, 1, .94), "detail": (1, 0, 0, 0),
+        "fullSize": (240, 160), "surface": (-.45, -.5, 1, 1), "artUV": (1, 1, 0, 0),
+    }
+    uniforms.update(overrides or {})
+    for key, value in uniforms.items():
         build.setUniform(key, list(value))
     surface = skia.Surface(240, 160)
     surface.getCanvas().drawPaint(skia.Paint(Shader=build.makeShader()))
@@ -40,3 +44,36 @@ assert lens[32, 35, 3] == 0, "rounded corner escaped its mask"
 assert np.abs(flat[80, 201, :3].astype(int) - lens[80, 201, :3]).max() > 8, "no displacement at bevel"
 assert np.any(render(12, dispersion=1.5)[:, :, 0] != lens[:, :, 0]), "dispersion has no effect"
 print("PASS: centre identity, window coordinates, rounded mask, edge displacement, dispersion")
+
+# The untinted transparent backend must never reveal either sampled child.
+glass = {"surface": (-.55, -.4, 0, 1), "finish": (.5, 2, .75, .75),
+         "tone": (1, .12, .12, 0), "accent": (.65, .8, .9, 1)}
+white = skia.Image.fromarray(np.full_like(pixels, 255), colorType=skia.ColorType.kRGBA_8888_ColorType)
+rest = render(12, overrides=glass)
+assert np.array_equal(rest, render(12, overrides=glass, child=white)), "transparent backend samples an image"
+assert 0 < rest[80, 120, 3] < 80, "missing backdrop should stay clear"
+for z in (0, 1):
+    base = dict(glass, surface=(-.55, -.4, z, 1))
+    idle = render(12, overrides=base)
+    held = render(12, overrides=dict(base, detail=(1, 0, .95, 0)))
+    delta = abs(held.astype(int) - idle.astype(int)).max(axis=2)
+    assert (delta > 8).sum() > 300, f"spring is imperceptible on backend {z}"
+print("PASS: transparent fallback, source independence, visible press on both backends")
+
+for name, changed in {
+    "refraction": {"optic": (23, 14, .6, 0)}, "compression": {"optic": (12, 14, 1, 0)},
+    "bevel": {"optic": (12, 26, .6, 0)}, "blur": {"optic": (12, 14, .6, 11)},
+    "reflection": {"finish": (0, 1, 0, 1)}, "rim": {"finish": (0, 3, 1, 0)},
+    "tint": {"tone": (1, 0, .4, 0)}, "saturation": {"tone": (.5, 0, 0, 0)},
+    "vibrancy": {"tone": (1, .45, 0, 0)}, "corner radius": {"radii": (38, 38)},
+}.items():
+    out = render(12, overrides=changed)
+    delta = abs(out.astype(int) - lens.astype(int)).max(axis=2)
+    assert (delta > 3).sum() > 55, f"{name} made no visible difference"
+
+# With an edge-only media layer the original player interior is fully exposed.
+art = {"surface": (0, 0, 2, 1), "artUV": (.5, .5, 7, 11), "detail": (1, 14, 0, 0)}
+assert render(12, overrides=art)[80, 120, 3] == 0, "overlay painted the album/controls in the centre"
+assert np.array_equal(render(0, overrides=dict(art, detail=(1, 0, 0, 0)))[80, 120],
+                      pixels[51, 67]), "album crop misaligned"
+print("PASS: ten independent material controls, album mapping, untouched media centre")
