@@ -1,0 +1,9 @@
+<resources>
+    <style name="ShadeTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:colorAccent">#94DCED</item>
+        <item name="android:windowBackground">#10151B</item>
+        <item name="android:navigationBarColor">#10151B</item>
+        <item name="android:statusBarColor">#10151B</item>
+        <item name="android:fontFamily">sans</item>
+    </style>
+</resources>

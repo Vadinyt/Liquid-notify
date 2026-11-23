@@ -1,13 +1,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <application android:label="LiquidNotify" android:allowBackup="false" android:theme="@android:style/Theme.Material.NoActionBar">
-        <meta-data android:name="xposedmodule" android:value="true"/>
-        <meta-data android:name="xposeddescription" android:value="Samsung notification shade visual hooks"/>
-        <meta-data android:name="xposedminversion" android:value="93"/>
-        <activity android:name=".SettingsActivity" android:exported="true" android:label="LiquidNotify">
-            <intent-filter>
-                <action android:name="android.intent.action.MAIN"/>
-                <category android:name="android.intent.category.LAUNCHER"/>
-            </intent-filter>
+    <queries><package android:name="com.android.systemui"/></queries>
+    <application android:label="LiquidShade" android:description="@string/description" android:theme="@style/ShadeTheme" android:allowBackup="false" android:supportsRtl="true" android:icon="@drawable/ic_lens">
+        <activity android:name=".SettingsActivity" android:exported="true">
+            <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
+        <provider android:name=".Bridge" android:authorities="dev.vadinyt.liquidshade.bridge" android:permission="android.permission.STATUS_BAR_SERVICE" android:exported="true" android:directBootAware="true" />
     </application>
 </manifest>
