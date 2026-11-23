@@ -15,30 +15,6 @@ final class WallpaperSource {
   Bitmap image;
   Bitmap[] levels = new Bitmap[0];
 
-  static Bitmap[] pyramid(Bitmap image) {
-    if (image == null) return new Bitmap[0];
-    Bitmap[] out = new Bitmap[6];
-    out[0] = image;
-    for (int i = 1; i < out.length; i++) {
-      Bitmap last = out[i - 1];
-      out[i] =
-          Bitmap.createScaledBitmap(
-              last, Math.max(1, last.getWidth() / 2), Math.max(1, last.getHeight() / 2), true);
-    }
-    return out;
-  }
-
-  Bitmap forBlur(float spread, int width, int height) {
-    if (levels.length == 0 || image == null) return null;
-    float step = Math.max(width / (float) image.getWidth(), height / (float) image.getHeight());
-    int i = 0;
-    while (i + 1 < levels.length && step * 2 < spread) {
-      i++;
-      step *= 2;
-    }
-    return levels[i];
-  }
-
   static final int UNKNOWN = 0,
       SYSTEM = 1,
       PHOTO = 2,
@@ -91,6 +67,8 @@ final class WallpaperSource {
   void refresh(
       Context ui, Executor worker, Handler main, int maxEdge, boolean custom, Runnable ready) {
     int token = ++generation;
+    final Bitmap previous = image;
+    final Bitmap[] previousLevels = levels;
     worker.execute(
         () -> {
           if (token != generation) return;
@@ -137,8 +115,15 @@ final class WallpaperSource {
           }
           Bitmap[] filtered;
           try {
-            filtered = pyramid(result);
-          } catch (OutOfMemoryError low) {
+            if (token != generation) return;
+            if (previous != null
+                && result != null
+                && previous.sameAs(result)
+                && previousLevels.length != 0) {
+              filtered = previousLevels;
+              result = previous;
+            } else filtered = BlurPyramid.build(result);
+          } catch (OutOfMemoryError | RuntimeException low) {
             filtered = new Bitmap[0];
             result = null;
             reason = UNREADABLE;

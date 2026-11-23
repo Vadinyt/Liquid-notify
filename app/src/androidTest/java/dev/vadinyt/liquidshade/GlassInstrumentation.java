@@ -71,7 +71,7 @@ public final class GlassInstrumentation extends Instrumentation {
             Bitmap bitmap = Bitmap.createBitmap(8, 8, Bitmap.Config.ARGB_8888);
             bitmap.eraseColor(Color.CYAN);
             source.image = bitmap;
-            source.levels = WallpaperSource.pyramid(bitmap);
+            source.levels = BlurPyramid.build(bitmap);
             glass.allowTexture = true;
             background.invalidate();
           });
@@ -114,6 +114,8 @@ public final class GlassInstrumentation extends Instrumentation {
             row.setAnimationMatrix(null);
           });
       int headerPixels = testNativeHeader();
+      String finish = testOpticalFinish();
+      saveCardPreview();
       report.putString(
           "stream",
           "LIQUIDSHADE_DEVICE_PASS marker="
@@ -130,6 +132,8 @@ public final class GlassInstrumentation extends Instrumentation {
               + openingPixels
               + " protectedHeaderPixels="
               + headerPixels
+              + " stripeRange="
+              + finish
               + " feedback=restored swipe=restored pipe=decoded");
       code = Activity.RESULT_OK;
     } catch (Throwable e) {
@@ -234,6 +238,111 @@ public final class GlassInstrumentation extends Instrumentation {
     int body = glass.getPixel(where[0] + 170, where[1] + boundary + 175);
     check(Color.green(body) > Color.red(body) + 70, "wallpaper was not rendered below clock");
     return tested;
+  }
+
+  /**
+   * Known source, real view, GPU window pixels. Only the user blur slider changes between samples.
+   */
+  private String testOpticalFinish() throws Exception {
+    Config look = new Config();
+    look.set(Option.PERFORMANCE, 0);
+    for (Option o :
+        new Option[] {
+          Option.BLUR,
+          Option.SHADE_BLUR,
+          Option.DIM,
+          Option.SHADE_TINT,
+          Option.GRADIENT,
+          Option.CONTRAST,
+          Option.TINT,
+          Option.CARD_OPACITY,
+          Option.REFLECTION,
+          Option.RIM
+        }) look.set(o, 0);
+    Bitmap stripes = Bitmap.createBitmap(360, 160, Bitmap.Config.ARGB_8888);
+    Canvas pattern = new Canvas(stripes);
+    pattern.drawColor(0xff222222);
+    Paint ink = new Paint();
+    ink.setColor(0xffdddddd);
+    for (int x = 0; x < 360; x += 12) pattern.drawRect(x, 0, x + 6, 160, ink);
+    WallpaperSource src = new WallpaperSource();
+    src.image = stripes;
+    src.levels = BlurPyramid.build(stripes);
+    Material[] lens = new Material[1];
+    FrameLayout[] card = new FrameLayout[1];
+    runOnMainSync(
+        () -> {
+          FrameLayout root = new FrameLayout(activity);
+          card[0] = new FrameLayout(activity);
+          root.addView(card[0], new FrameLayout.LayoutParams(360, 160));
+          lens[0] = new Material(card[0], card[0], src, look, Material.Kind.CARD);
+          card[0].setBackground(lens[0]);
+          // Foreground icon is outside the shader's input.
+          View icon = new View(activity);
+          icon.setBackgroundColor(Color.MAGENTA);
+          FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(14, 14);
+          lp.topMargin = 50;
+          lp.leftMargin = 78;
+          card[0].addView(icon, lp);
+          activity.setContentView(root);
+        });
+    SystemClock.sleep(180);
+    int[] at = new int[2];
+    runOnMainSync(() -> card[0].getLocationInWindow(at));
+    Bitmap before = copy();
+    runOnMainSync(
+        () -> {
+          look.set(Option.BLUR, 44);
+          lens[0].configure(look);
+          card[0].invalidate();
+        });
+    SystemClock.sleep(180);
+    Bitmap after = copy();
+    int sharp = lumaRange(before, at), soft = lumaRange(after, at);
+    int ix = at[0] + 84, iy = at[1] + 56;
+    check(
+        before.getPixel(ix, iy) == Color.MAGENTA && after.getPixel(ix, iy) == Color.MAGENTA,
+        "blur touched foreground");
+    check(sharp > 145 && soft < 25, "centre blur failed " + sharp + " -> " + soft);
+    return sharp + "->" + soft;
+  }
+
+  private static int lumaRange(Bitmap b, int[] at) {
+    int low = 255, high = 0;
+    for (int x = 110; x < 245; x++) {
+      int v = Color.green(b.getPixel(at[0] + x, at[1] + 84));
+      low = Math.min(low, v);
+      high = Math.max(high, v);
+    }
+    return high - low;
+  }
+
+  // Only runs in the emulator test APK. Export the exact interactive preview in French.
+  private void saveCardPreview() throws Exception {
+    Preview[] view = new Preview[1];
+    runOnMainSync(
+        () -> {
+          android.content.res.Configuration locale =
+              new android.content.res.Configuration(activity.getResources().getConfiguration());
+          locale.setLocale(java.util.Locale.FRENCH);
+          Config look = new Config();
+          look.select(1);
+          view[0] = new Preview(activity.createConfigurationContext(locale), look);
+          FrameLayout scene = new FrameLayout(activity);
+          scene.setBackgroundColor(0xff102034);
+          int height = Math.round(activity.getResources().getDisplayMetrics().density * 152);
+          scene.addView(view[0], new FrameLayout.LayoutParams(-1, height));
+          activity.setContentView(scene);
+        });
+    SystemClock.sleep(220);
+    int[] at = new int[2];
+    runOnMainSync(() -> view[0].getLocationInWindow(at));
+    Bitmap window = copy(),
+        crop = Bitmap.createBitmap(window, at[0], at[1], view[0].getWidth(), view[0].getHeight());
+    try (OutputStream stream =
+        new FileOutputStream(new File(activity.getCacheDir(), "liquidshade-preview.png"))) {
+      check(crop.compress(Bitmap.CompressFormat.PNG, 100, stream), "preview PNG encoding");
+    }
   }
 
   private void install() {

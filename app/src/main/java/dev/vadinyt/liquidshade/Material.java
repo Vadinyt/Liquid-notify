@@ -36,7 +36,8 @@ final class Material extends GradientDrawable {
   private final float[] artMatrix = new float[9], artUV = new float[4];
   private final float[] nextMap = new float[9], currentMap = new float[9];
   private boolean mapped;
-  private Bitmap bound, fullBound, previewAlbum;
+  private final BlurPyramid.Sample blur = new BlurPyramid.Sample();
+  private Bitmap bound, coarseBound, fullBound, previewAlbum;
 
   void setPreviewAlbum(Bitmap bitmap, float left, float top, float scale) {
     previewAlbum = bitmap;
@@ -337,7 +338,8 @@ final class Material extends GradientDrawable {
   void release() {
     suspend();
     if (spring != null) spring.cancel();
-    bound = null;
+    bound = coarseBound = null;
+    blur.fine = blur.coarse = null;
     fullBound = null;
     sampler = null;
     program = null;
@@ -481,15 +483,12 @@ final class Material extends GradientDrawable {
             : cfg.unit(media ? MEDIA_RIM : RIM) * (adaptive && source.luminance < .3f ? .86f : 1f);
     float border = field ? 0f : dp * (.15f + 1.7f * cfg.unit(BORDER));
     float shadeBlur = cfg.on(SHADE_ON) ? cfg.unit(SHADE_BLUR) : 0f;
-    float spread =
-        dp
-            * (24 * shadeBlur * (.35f + .65f * shadeBlur)
-                + (field
-                    ? 0
-                    : 22
-                        * cfg.unit(media ? MEDIA_BLUR : BLUR)
-                        * cfg.unit(media ? MEDIA_BLUR : BLUR)))
-            * (adaptive && source.luminance > .65f ? 1.1f : 1);
+    // Gaussian radii compose in variance. Keep the material distinct from the open shade
+    // even when the user chooses a nearly clear panel.
+    float paneSigma = 19f * shadeBlur * (.48f + .52f * shadeBlur);
+    float frost = cfg.unit(media ? MEDIA_BLUR : BLUR);
+    float lensSigma = field ? 0 : 26f * frost * (.70f + .30f * frost);
+    float spread = dp * (float) Math.sqrt(paneSigma * paneSigma + lensSigma * lensSigma);
     int mode = cfg.get(PERFORMANCE), highlight = cfg.get(HIGHLIGHT), sc = cfg.get(SHADE_COLOR);
     float dim = cfg.on(SHADE_ON) ? cfg.unit(DIM) * .60f : 0,
         grade = cfg.on(SHADE_ON) ? cfg.unit(GRADIENT) * .24f : 0;
@@ -498,8 +497,8 @@ final class Material extends GradientDrawable {
         card && cfg.on(CONTRAST)
             ? (darkText ? 1f - source.luminance : source.luminance) * .32f
             : 0f;
-    Bitmap bitmap =
-        allowTexture ? source.forBlur(spread, frame.getWidth(), frame.getHeight()) : null;
+    blur.select(source.levels, spread, frame.getWidth(), frame.getHeight(), mode == 2);
+    Bitmap bitmap = allowTexture ? blur.fine : null;
     Bitmap album =
         media && edgeOnly
             ? (v instanceof android.widget.ImageView cover ? artworkSource(cover) : previewAlbum)
@@ -519,12 +518,25 @@ final class Material extends GradientDrawable {
           program = new RuntimeShader(LensProgram.SOURCE);
           program.setInputShader("src", blank);
           program.setInputShader("clearSrc", blank);
+          program.setInputShader("coarseSrc", blank);
         }
         if (bound != bitmap) {
           sampler = bitmap == null ? null : filtered(bitmap);
           program.setInputShader("src", sampler == null ? blank : sampler);
           bound = bitmap;
         }
+        Bitmap coarse = album == null && hasImage ? blur.coarse : null;
+        if (coarse != coarseBound) {
+          program.setInputShader(
+              "coarseSrc", coarse == null ? blank : coarse == bitmap ? sampler : filtered(coarse));
+          coarseBound = coarse;
+        }
+        program.setFloatUniform(
+            "lowPass",
+            coarse == null ? 0f : (float) coarse.getWidth(),
+            coarse == null ? 0f : (float) coarse.getHeight(),
+            coarse == null ? 0f : blur.mix);
+        program.setFloatUniform("face", card ? 1f : 0f, adaptive ? 1f : 0f);
         Bitmap full = album != null ? album : hasImage ? source.image : null;
         if (fullBound != full) {
           if (field) lastBackend = 0;
@@ -573,7 +585,7 @@ final class Material extends GradientDrawable {
             field ? 1 : .3f + 1.4f * cfg.unit(SATURATION),
             field ? 0 : .42f * cfg.unit(VIBRANCY),
             amount,
-            0);
+            card && cfg.on(CONTRAST) ? 1f : 0f);
         program.setFloatUniform("accent", ch(tint, 16), ch(tint, 8), ch(tint, 0), 1);
         program.setFloatUniform("shade", ch(sc, 16), ch(sc, 8), ch(sc, 0), shadeTint);
         program.setFloatUniform("wash", dim, grade, darkText ? 1f : 0f, 0);

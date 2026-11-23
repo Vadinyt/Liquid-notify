@@ -117,4 +117,6 @@
     <string name="source_frame">Home wallpaper frame supplied by Samsung</string>
     <string name="source_thumb">Samsung home wallpaper thumbnail</string>
     <string name="row_frames">Card draws with a whole-row transform</string>
+    <string name="preview_calendar">Calendar</string>
+    <string name="preview_reminder">Meeting at 6 PM</string>
 </resources>

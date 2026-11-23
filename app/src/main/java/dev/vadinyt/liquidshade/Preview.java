@@ -15,6 +15,12 @@ final class Preview extends View {
   private final Path mediaClip = new Path();
   private final Bitmap[] demo;
   private long photoRevision = Long.MIN_VALUE;
+  private final android.text.TextPaint linePaint =
+      new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
+  private final Typeface medium = Typeface.create("sans-serif-medium", Typeface.NORMAL);
+  private final String appLabel, reminder;
+  private String fittedLabel = "", fittedReminder = "";
+  private int fittedWidth = -1;
   private Config c;
   private float x = .50f, downX, startX;
   private boolean dragged;
@@ -23,6 +29,8 @@ final class Preview extends View {
   Preview(Context ctx, Config config) {
     super(ctx);
     c = config;
+    appLabel = ctx.getString(R.string.preview_calendar);
+    reminder = ctx.getString(R.string.preview_reminder);
     setFocusable(true);
     setClickable(true);
     setContentDescription(ctx.getString(R.string.preview_hint));
@@ -31,34 +39,62 @@ final class Preview extends View {
       layers[k.ordinal()] = new Material(this, this, source, c, k);
     Bitmap b = Bitmap.createBitmap(720, 280, Bitmap.Config.ARGB_8888);
     Canvas canvas = new Canvas(b);
-    p.setShader(
+    // Curved ridges and a dusk gradient expose both the edge displacement and face blur.
+    Paint backdrop = new Paint(Paint.ANTI_ALIAS_FLAG);
+    backdrop.setShader(
         new LinearGradient(
             0,
             0,
-            720,
+            660,
             280,
-            new int[] {0xff15334a, 0xff72a4b5, 0xfff6b396, 0xff7f4866},
+            new int[] {0xff101d38, 0xff273b61, 0xff65516f, 0xffc88479},
             null,
             Shader.TileMode.CLAMP));
-    canvas.drawPaint(p);
-    p.setShader(null);
-    Path band = new Path();
-    for (int i = 0; i < 8; i++) {
-      band.rewind();
-      float y = 8 + i * 28;
-      band.moveTo(-20, y + 70);
-      band.cubicTo(170, y - 100, 420, y + 120, 750, y - 55);
-      p.setStyle(Paint.Style.STROKE);
-      p.setStrokeWidth(i == 2 || i == 5 ? 15 : 4);
-      p.setColor(i == 2 ? 0xffffdcb3 : i == 5 ? 0xff2e6378 : 0xbbabd9de);
-      canvas.drawPath(band, p);
-    }
-    p.setStyle(Paint.Style.FILL);
+    canvas.drawPaint(backdrop);
+    ribbon(canvas, backdrop, 56, 106, 16, 0xff7ccbc8, 0xff285975, 0xff122e50);
+    ribbon(canvas, backdrop, 116, 159, 73, 0xffedb8a4, 0xff926b8c, 0xff423959);
+    ribbon(canvas, backdrop, 186, 124, 152, 0xffc7b4d8, 0xff716491, 0xff263454);
     source.image = b;
-    demo = WallpaperSource.pyramid(b);
+    demo = BlurPyramid.build(b);
     source.levels = demo;
     source.luminance = .46f;
     setClipToOutline(true);
+  }
+
+  private static void ribbon(
+      Canvas canvas,
+      Paint fill,
+      float left,
+      float bend,
+      float right,
+      int light,
+      int mid,
+      int base) {
+    Path curve = new Path();
+    curve.moveTo(-4, left);
+    curve.cubicTo(190, left - 103, 340, bend + 104, 487, bend + 39);
+    curve.cubicTo(580, bend + 14, 661, right + 14, 724, right);
+    Path shape = new Path(curve);
+    shape.lineTo(724, 284);
+    shape.lineTo(-4, 284);
+    shape.close();
+    fill.setStyle(Paint.Style.FILL);
+    fill.setShader(
+        new LinearGradient(
+            310,
+            left - 11,
+            360,
+            left + 92,
+            new int[] {light, mid, base},
+            new float[] {0, .38f, 1},
+            Shader.TileMode.CLAMP));
+    canvas.drawPath(shape, fill);
+    fill.setShader(null);
+    fill.setStyle(Paint.Style.STROKE);
+    fill.setColor(0xaaffeee1);
+    fill.setStrokeWidth(1.6f);
+    canvas.drawPath(curve, fill);
+    fill.setColor(Color.WHITE);
   }
 
   void reloadPhoto() {
@@ -76,7 +112,7 @@ final class Preview extends View {
                 Bitmap image =
                     BackdropPhoto.decode(
                         ImageDecoder.createSource(ctx.getContentResolver(), Bridge.PHOTO), 840);
-                Bitmap[] levels = WallpaperSource.pyramid(image);
+                Bitmap[] levels = BlurPyramid.build(image);
                 post(
                     () -> {
                       if (photoRevision == revision) usePreview(levels);
@@ -121,7 +157,13 @@ final class Preview extends View {
       p.setColor(Color.WHITE);
       canvas.drawBitmap(source.image, null, area, p);
     }
-    int cw = (int) (w * (mode == Material.Kind.FOOTER ? .32f : .65f)),
+    int
+        cw =
+            (int)
+                (w
+                    * (mode == Material.Kind.FOOTER
+                        ? .32f
+                        : mode == Material.Kind.CARD ? .83f : .65f)),
         ch =
             (int)
                 (h
@@ -170,6 +212,11 @@ final class Preview extends View {
       canvas.drawRoundRect(area, ch * .33f, ch * .33f, p);
     }
     float dp = getResources().getDisplayMetrics().density;
+    if (mode == Material.Kind.CARD) {
+      drawReminder(canvas, left, top, cw, ch, dp);
+      canvas.restoreToCount(rowSave);
+      return;
+    }
     p.setColor(0xfff3f7fa);
     p.setShadowLayer(2 * dp, 0, dp, 0x80000000);
     p.setTypeface(Typeface.create("sans-serif-medium", Typeface.NORMAL));
@@ -197,6 +244,56 @@ final class Preview extends View {
           left + cw * .22f, top + ch * .75f, left + cw * .78f, top + ch * .75f + 2 * dp, dp, dp, p);
     }
     canvas.restoreToCount(rowSave);
+  }
+
+  private void drawReminder(Canvas canvas, int left, int top, int w, int h, float dp) {
+    float cy = top + h * .5f, icon = Math.min(32 * dp, h * .54f), ix = left + 14 * dp;
+    float textLeft = ix + icon + 11 * dp, arrow = left + w - 15 * dp;
+    p.setColor(0xff557597);
+    canvas.drawRoundRect(ix, cy - icon / 2, ix + icon, cy + icon / 2, icon * .31f, icon * .31f, p);
+    p.setColor(0xfff1fafb);
+    p.setStyle(Paint.Style.STROKE);
+    p.setStrokeWidth(Math.max(1, icon * .052f));
+    canvas.drawRoundRect(
+        ix + .24f * icon,
+        cy - .21f * icon,
+        ix + .76f * icon,
+        cy + .25f * icon,
+        icon * .06f,
+        icon * .06f,
+        p);
+    canvas.drawLine(ix + .25f * icon, cy - .065f * icon, ix + .75f * icon, cy - .065f * icon, p);
+    canvas.drawLine(ix + .38f * icon, cy - .28f * icon, ix + .38f * icon, cy - .16f * icon, p);
+    canvas.drawLine(ix + .62f * icon, cy - .28f * icon, ix + .62f * icon, cy - .16f * icon, p);
+    p.setColor(0xffedf4fe);
+    canvas.drawLine(arrow - 3 * dp, cy - dp, arrow, cy + 2 * dp, p);
+    canvas.drawLine(arrow, cy + 2 * dp, arrow + 3 * dp, cy - dp, p);
+    p.setStyle(Paint.Style.FILL);
+    int space = Math.max(0, (int) (arrow - 9 * dp - textLeft));
+    float size = Math.min(15 * dp, h * .22f);
+    if (fittedWidth != space || linePaint.getTextSize() != size) {
+      linePaint.setTypeface(Typeface.DEFAULT);
+      linePaint.setTextSize(size * .79f);
+      fittedLabel =
+          android.text.TextUtils.ellipsize(
+                  appLabel, linePaint, space, android.text.TextUtils.TruncateAt.END)
+              .toString();
+      linePaint.setTextSize(size);
+      linePaint.setTypeface(medium);
+      fittedReminder =
+          android.text.TextUtils.ellipsize(
+                  reminder, linePaint, space, android.text.TextUtils.TruncateAt.END)
+              .toString();
+      fittedWidth = space;
+    }
+    linePaint.setTypeface(Typeface.DEFAULT);
+    linePaint.setTextSize(size * .79f);
+    linePaint.setColor(0xffe3eaf3);
+    canvas.drawText(fittedLabel, textLeft, cy - 2 * dp, linePaint);
+    linePaint.setTypeface(medium);
+    linePaint.setTextSize(size);
+    linePaint.setColor(Color.WHITE);
+    canvas.drawText(fittedReminder, textLeft, cy + size, linePaint);
   }
 
   @Override

@@ -18,6 +18,7 @@ def render(shift, origin=(0, 0), dispersion=0.0, scale=1.0, overrides=None, chil
     build = skia.RuntimeShaderBuilder(effect)
     build.setChild("src", child.makeShader())
     build.setChild("clearSrc", child.makeShader())
+    build.setChild("coarseSrc", child.makeShader())
     uniforms = {
         "extent": (85, 48), "center": (120, 80), "mapX": (scale, 0, origin[0]),
         "mapY": (0, scale, origin[1]), "mapW": (0, 0, 1),
@@ -103,3 +104,24 @@ assert np.all(underlay[:41,:,3] == 0)
 assert 40 < underlay[48,100,3] < 180
 assert np.all(underlay[62:120,:,3] == 255)
 print("PASS: untouched native header, soft transition, fully drawn shade below it")
+
+# Thin, directional specular arcs and local contrast on the textured notification face.
+def solid(rgb):
+    p = np.empty_like(pixels)
+    p[:] = (*rgb, 255)
+    return skia.Image.fromarray(p, colorType=skia.ColorType.kRGBA_8888_ColorType)
+
+midnight = solid((16, 25, 45))
+bright = solid((240, 234, 230))
+settings = {"finish": (0, 1.2, .82, .48), "face": (1, 1), "tone": (1, 0, 0, 0)}
+arcs = render(14, overrides=settings, child=midnight).astype(float)
+# Within the straight edge, the top-left glint is stronger than the top-right.
+assert arcs[32,79,0] > arcs[32,166,0]+18, "upper glint doesn't taper"
+assert arcs[32,79,0] > arcs[38,79,0]+32, "broad painted ridge"
+contrast = dict(settings, tone=(1,0,0,1))
+lit = render(14, overrides=contrast, child=bright)
+dark = render(14, overrides=contrast, child=midnight)
+assert lit[80,120,0] < 160 and abs(int(dark[80,120,0])-16) < 4, "white-text contrast washed out dark pixels"
+light_ink = render(14, overrides=dict(contrast, wash=(0,0,1,0)), child=midnight)
+assert light_ink[80,120,0]>100, "dark-text contrast missing"
+print("PASS: directional specular taper, thin rim, local contrast for both text colours")

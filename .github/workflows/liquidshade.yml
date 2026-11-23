@@ -57,17 +57,17 @@ jobs:
       - name: Verify and stage the signed APK
         run: |
           mkdir -p dist
-          cp app/build/outputs/apk/debug/app-debug.apk dist/LiquidShade-1.3.0.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/LiquidShade-1.3.0.apk | tee "$RUNNER_TEMP/liquidshade-cert.txt"
+          cp app/build/outputs/apk/debug/app-debug.apk dist/LiquidShade-1.4.0.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/LiquidShade-1.4.0.apk | tee "$RUNNER_TEMP/liquidshade-cert.txt"
           expected=$(keytool -exportcert -keystore "$LIQUIDSHADE_KEYSTORE" -storepass android -alias androiddebugkey | sha256sum | cut -d' ' -f1)
           actual=$(awk '/^Signer #1 certificate SHA-256 digest:/ {print $NF}' "$RUNNER_TEMP/liquidshade-cert.txt")
           test "$actual" = "$expected"
-          test "$(unzip -p dist/LiquidShade-1.3.0.apk META-INF/xposed/scope.list)" = com.android.systemui
+          test "$(unzip -p dist/LiquidShade-1.4.0.apk META-INF/xposed/scope.list)" = com.android.systemui
           cd dist
-          sha256sum LiquidShade-1.3.0.apk > SHA256SUMS
+          sha256sum LiquidShade-1.4.0.apk LiquidShade-1.4.0-preview.png > SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: LiquidShade-1.3.0
+          name: LiquidShade-1.4.0
           path: dist/
           retention-days: 30
           if-no-files-found: error

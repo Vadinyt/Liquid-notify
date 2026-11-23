@@ -128,6 +128,19 @@ public final class ShadeModule extends XposedModule {
     } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
     }
     try {
+      Class<?> row = cl.loadClass(ROW);
+      Class<?> av = cl.loadClass(PKG + ".statusbar.notification.row.ActivatableNotificationView");
+      runtime.normalBackground = field(av, "mBackgroundNormal", cl.loadClass(BG));
+      Method children = row.getDeclaredMethod("getAttachedChildren");
+      if (java.util.List.class.isAssignableFrom(children.getReturnType()))
+        runtime.groupedRows = children;
+      if (runtime.cardCompatible) {
+        after(row, "addChildNotification", v -> runtime.discoverRows((View) v), row, int.class);
+        after(row, "onFinishInflate", v -> runtime.row((View) v));
+      }
+    } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
+    }
+    try {
       Class<?> activatable =
           cl.loadClass(PKG + ".statusbar.notification.row.ActivatableNotificationView");
       Method dispatch = activatable.getDeclaredMethod("dispatchTouchEvent", MotionEvent.class);

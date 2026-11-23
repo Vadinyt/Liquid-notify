@@ -5,6 +5,10 @@ final class LensProgram {
       """
 uniform shader src;
 uniform shader clearSrc;
+uniform shader coarseSrc;
+// xy coarse resolution, z variance blend. Direct album images use the small kernel.
+uniform float3 lowPass;
+uniform float2 face;
 uniform float2 extent;
 uniform float2 center;
 uniform float3 mapX;
@@ -41,6 +45,10 @@ half3 softAt(float2 screen) {
   float2 uv=uvAt(screen,texture);
   float b=surface.z>1.5?optic.w*.5*(artUV.x+artUV.y):optic.w/max(frame.x/texture.x,frame.y/texture.y);
   half3 c=src.eval(uv).rgb;
+  if(lowPass.x>0.0) {
+    if(lowPass.z>.001) c=mix(c,coarseSrc.eval(uvAt(screen,lowPass.xy)).rgb,lowPass.z);
+    return c;
+  }
   if(b>.1) c=.36*c+.16*(src.eval(uv+float2(b,b)).rgb+src.eval(uv-float2(b,b)).rgb+
                                 src.eval(uv+float2(b,-b)).rgb+src.eval(uv+float2(-b,b)).rgb);
   return c;
@@ -58,10 +66,22 @@ half4 main(float2 point) {
   float2 q=abs(shaped)-extent+r;
   float2 outer=max(q,0.0);
   float len=length(outer);
+  float2 normalBase=len>.001?outer/max(.001,len):(q.x>q.y?float2(1,0):float2(0,1));
   float sd=len+min(max(q.x,q.y),0.0)-r;
+  // A superelliptic corner joins the straight edge with vanishing curvature.
+  if(face.x>.5 && min(q.x,q.y)>0.0) {
+    float m=max(q.x,q.y);
+    float2 u=q/m;
+    float norm=m*pow(dot(u*u,sqrt(u)),.4);
+    float2 v=q/max(.001,norm);
+    float2 grad=v*sqrt(v);
+    float g=max(.001,length(grad));
+    sd=(norm-r)/g;
+    normalBase=grad/g;
+  }
   float aa=clamp(.5-sd,0.0,1.0);
   if(aa<=0.0) return half4(0);
-  float2 n=(len>.001?outer/max(.001,len):(q.x>q.y?float2(1,0):float2(0,1)))*sign(p);
+  float2 n=normalBase*sign(p);
   float inset=max(0.0,-sd), bevel=max(1.0,optic.y);
   float band=clamp(1.0-inset/bevel,0.0,1.0);
   // Rounded lens shoulder. Snell displacement approaches the edge tangentially
@@ -76,40 +96,34 @@ half4 main(float2 point) {
   float y=clamp(xy.y/max(1.0,frame.y),0.0,1.0);
   float2 lamp=normalize(float2(-.62,-.84)+contact*min(.52,abs(spring)*.52));
   float facing=dot(n,lamp);
-  float along=clamp(.5+.5*dot(normp,lamp),0.0,1.0);
-  float crown=smoothstep(.15,.96,along);
-  float rim=(1.0-smoothstep(0.0,max(.12,finish.y),inset))*finish.z;
-  float ridge=exp(-abs(inset/bevel-(.32+.14*optic.z))*7.0)*slope;
-  float spec=rim*(.07+.65*pow(abs(facing),3.0)+.19*crown);
-  float reflection=finish.w*((.04+.18*crown)*slope+.34*ridge*max(-facing,0.0)+.033*(1.0-normp.y)*.5);
+  // Two finite light sources. The rim tapers along each side instead of illuminating a
+  // whole horizontal stroke. Specular width is independent of the optical bevel width.
+  float keyPos=normp.x+.57+.23*normp.y;
+  float fillPos=normp.x-.64+.14*normp.y;
+  float key=pow(max(facing,0.0),2.5)*exp(-1.65*keyPos*keyPos);
+  float fill=pow(max(-facing,0.0),3.0)*exp(-2.3*fillPos*fillPos);
+  float lipWidth=max(.32,finish.y*.82);
+  float lip=1.0-smoothstep(0.0,lipWidth+.45,inset);
+  float spec=finish.z*lip*(.055+.89*key+.52*fill);
+  // Bounded inner bounce at the far shoulder; the rest of the bevel obtains its colour
+  // from the refracted scene. Dark glass stays clear between the two specular arcs.
+  float ridge=exp(-abs(inset-max(.7,bevel*.26))/max(.5,surface.w*.70));
+  float reflection=finish.w*(ridge*(.07*key+.38*fill)+.012*(1.0-normp.y));
   float glint=exp(-abs(dot(fromTouch,float2(.84,-.55))-.14*spring)*4.8);
   float contactLight=abs(spring)*locality*((.10+.42*glint)*(.24+.76*band)+.14*ridge);
-  float shine=clamp(spec+reflection+(.55*finish.w+.45*finish.z)*contactLight,0.0,.92);
-  float shadow=clamp((.09*finish.w+.045*optic.z)*slope*(1.0-max(facing,0.0)),0.0,.25);
+  float shine=clamp(spec+reflection+(.55*finish.w+.45*finish.z)*contactLight,0.0,.88);
+  float shadow=.068*finish.w*band*band*(1.0-key);
   float coverage=body.y>0.0 && body.x>=0.0 && surface.z<1.5 ?
     smoothstep(body.x,body.x+body.y,xy.y) : 1.0;
   if(body.z>.5 && coverage<=0.0)return half4(0);
-  if(body.z<.5) {
-    // A narrow reflected light below the bright lip changes sides around the rounded corners.
-    float arch=exp(-abs(inset/bevel-.29)*8.5);
-    float reverse=exp(-abs(inset/bevel-.68)*8.0);
-    shine=clamp(shine+finish.w*(.38*arch*max(facing,.0)+.30*reverse*max(-facing,.0)),0.0,.92);
-  }
   float alpha=aa*detail.x;
   if(body.z>.5)alpha*=coverage;
   if(detail.y>0.0)alpha*=1.0-smoothstep(1.0,max(1.01,detail.y),inset);
   half4 clearGlass=half4(0);
   if(surface.z<.5 || (coverage<1.0 && body.z<.5)) {
     // Premultiplied decoration over the real compositor output. No image sampling here.
-    // Two bands on opposite sides of a curved bevel keep the relief legible on flat OEM blur.
-    float width=max(bevel,1.0);
-    float shoulder=exp(-abs(inset/width-.32)*5.0);
-    float inner=exp(-abs(inset/width-.77)*7.0);
-    float directional=.25+.75*abs(facing);
-    float caustic=(.19*finish.z+.30*finish.w)*shoulder*directional
-                 +.14*finish.w*inner*max(-facing,0.0);
-    shine=clamp(shine+caustic,0.0,.92);
-    shadow=clamp(shadow+.12*finish.w*inner*max(facing,0.0),0.0,.34);
+    // Keep a directional reflection when Samsung supplies only a compositor backdrop.
+    shine=clamp(shine+finish.w*.50*band*band*(key+.4*fill),0.0,.88);
     float tintA=tone.z;
     float3 tintRGB=mix(float3(dot(accent.rgb,float3(.2126,.7152,.0722))),accent.rgb,tone.x+tone.y*.35);
     float bodyA=tintA+(1.0-tintA)*detail.w;
@@ -129,14 +143,32 @@ half4 main(float2 point) {
       sharp.r=clearSrc.eval(uvAt(toBackdrop(point+offset+n*band*finish.x),fullSize)).r;
       sharp.b=clearSrc.eval(uvAt(toBackdrop(point+offset-n*band*finish.x),fullSize)).b;
     }
-    c=mix(c,sharp,smoothstep(0.0,.85,band)*flags.a);
+    float shoulder=smoothstep(.0,.78,band);
+    c=mix(c,sharp,shoulder*flags.a*(.66+.18*abs(facing)));
   }
   if(surface.z<1.5)c=mix(c,half3(shade.rgb),shade.a)*(1.0-wash.x-wash.y*(1.0-y));
   float lum=dot(c,float3(.2126,.7152,.0722));
   float chroma=max(max(c.r,c.g),c.b)-min(min(c.r,c.g),c.b);
   c=mix(half3(lum),c,tone.x+tone.y*(1.0-chroma));
-  c=mix(c,half3(accent.rgb),tone.z);
-  c=mix(c,half3(wash.z),detail.w)*(1.0-shadow);
+  half3 pigment=half3(accent.rgb);
+  if(face.y>.5 && face.x>.5) pigment=mix(pigment,clamp(c+.14,0.0,1.0),.46);
+  c=mix(c,pigment,tone.z);
+  // Adapt the face to the light actually sampled under the text. Preserve hue and keep
+  // a dark wallpaper dark without a uniform gray wash. The optical rim keeps its colour.
+  if(tone.w>.5) {
+    float l=dot(c,float3(.2126,.7152,.0722));
+    float interior=1.0-.72*smoothstep(.0,.96,band);
+    if(wash.z<.5) {
+      float excess=max(0.0,l-.36);
+      float target=l-excess+excess/(1.0+4.8*excess);
+      c*=mix(1.0,target/max(.001,l),interior);
+    } else {
+      float deficit=max(.63-l,0.0);
+      float lift=deficit-deficit/(1.0+5.0*deficit);
+      c=mix(c,half3(1.0),interior*lift/max(.001,1.0-l));
+    }
+  } else c=mix(c,half3(wash.z),detail.w);
+  c*=1.0-shadow;
   c=mix(c,half3(flags.rgb),shine);
   half4 imageGlass=half4(clamp(c,0.0,1.0)*alpha,alpha);
   return body.z<.5 ? mix(clearGlass,imageGlass,coverage) : imageGlass;

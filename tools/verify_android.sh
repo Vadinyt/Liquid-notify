@@ -11,3 +11,7 @@ if ! grep -q 'LIQUIDSHADE_DEVICE_PASS' <<< "$result"; then
   adb logcat -d -s LiquidShadeTest:E AndroidRuntime:E
   exit 1
 fi
+
+mkdir -p dist
+adb exec-out run-as dev.vadinyt.liquidshade cat cache/liquidshade-preview.png > dist/LiquidShade-1.4.0-preview.png
+test -s dist/LiquidShade-1.4.0-preview.png

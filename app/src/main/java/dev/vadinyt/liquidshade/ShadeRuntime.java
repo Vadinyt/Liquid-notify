@@ -23,7 +23,8 @@ final class ShadeRuntime
         ViewTreeObserver.OnPreDrawListener,
         Material.Events {
   Field expanded, barState, qs, background, onLock, headsUp;
-  Method child;
+  Method child, groupedRows;
+  Field normalBackground;
   boolean stackCompatible, cardCompatible, mediaCompatible, footerCompatible;
   int hooks;
   private final Handler main = new Handler(Looper.getMainLooper());
@@ -243,7 +244,7 @@ final class ShadeRuntime
               && SystemClock.elapsedRealtime() - lastLog > 1800) {
             lastLog = SystemClock.elapsedRealtime();
             diagnostic.accept(
-                "1.3 source="
+                "1.4 source="
                     + sourceLast
                     + " card="
                     + cardBackend
@@ -389,8 +390,7 @@ final class ShadeRuntime
         if (v instanceof ViewGroup rows) {
           for (int i = 0; i < rows.getChildCount(); i++) {
             View direct = rows.getChildAt(i);
-            if (classIs(direct, ShadeModule.ROW) && !rowBackgrounds.containsKey(direct))
-              row(direct);
+            if (classIs(direct, ShadeModule.ROW)) discoverRows(direct);
           }
         }
         wakeAt(openedAt + 220);
@@ -457,15 +457,49 @@ final class ShadeRuntime
 
   void row(View row) {
     connect(row.getContext());
-    View bg = named(row, "backgroundNormal");
-    if (bg == null || !classIs(bg, ShadeModule.BG)) return;
-    rowBackgrounds.put(row, new WeakReference<>(bg));
+    View bg = null;
+    if (normalBackground != null) {
+      try {
+        bg = (View) normalBackground.get(row);
+      } catch (IllegalAccessException ignored) {
+      }
+    }
+    // The same id occurs in nested rows. Only style the background owned by this row.
+    if (bg == null) bg = named(row, "backgroundNormal");
+    if (bg == null
+        || bg.getParent() != row
+        || bg.getId() != id("backgroundNormal")
+        || !classIs(bg, ShadeModule.BG)) return;
+    WeakReference<View> old = rowBackgrounds.get(row);
+    View previous = old == null ? null : old.get();
+    if (previous != bg) {
+      if (previous != null && (previous.getParent() == null || previous.getParent() == row))
+        drop(previous);
+      rowBackgrounds.put(row, new WeakReference<>(bg));
+    }
     register(bg, CARD);
     if (loaded) applyOne(bg);
   }
 
+  void discoverRows(View parent) {
+    row(parent);
+    if (groupedRows == null) return;
+    try {
+      Object children = groupedRows.invoke(parent);
+      if (children instanceof List<?> rows) {
+        for (Object item : rows)
+          if (item instanceof View v && v != parent && classIs(v, ShadeModule.ROW)) row(v);
+      }
+    } catch (ReflectiveOperationException ignored) {
+    }
+  }
+
   void backgroundChanged(View v) {
-    if (surfaces.containsKey(v)) applyOne(v);
+    if (surfaces.containsKey(v)) {
+      applyOne(v);
+    } else if (v.getParent() instanceof View parent && classIs(parent, ShadeModule.ROW)) {
+      row(parent);
+    }
   }
 
   void footer(View root) {

@@ -117,4 +117,6 @@
     <string name="source_frame">Image du fond d’accueil fournie par Samsung</string>
     <string name="source_thumb">Miniature du fond d’accueil Samsung</string>
     <string name="row_frames">Dessins de carte avec déformation de la ligne</string>
+    <string name="preview_calendar">Agenda</string>
+    <string name="preview_reminder">Rendez-vous à 18 h</string>
 </resources>
