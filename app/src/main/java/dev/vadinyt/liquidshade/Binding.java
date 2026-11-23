@@ -106,15 +106,22 @@ final class Binding {
   }
 
   private WeakReference<Drawable> artIdentity;
+  MediaArtwork mediaSlot;
+  private WeakReference<ImageView> lastImage;
+  WeakReference<ProgressBar> progress;
   private int artColor;
 
   boolean artChanged(ImageView v) {
-    return artIdentity == null || artIdentity.get() != v.getDrawable();
+    return lastImage == null
+        || lastImage.get() != v
+        || artIdentity == null
+        || artIdentity.get() != (v == null ? null : v.getDrawable());
   }
 
   int art(ImageView image) {
     if (!artChanged(image)) return artColor;
-    Drawable drawable = image.getDrawable();
+    lastImage = new WeakReference<>(image);
+    Drawable drawable = image == null ? null : image.getDrawable();
     artIdentity = new WeakReference<>(drawable);
     artColor = 0;
     for (int i = 0;

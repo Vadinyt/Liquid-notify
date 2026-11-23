@@ -22,6 +22,10 @@ final class Config {
     return get(o) != 0;
   }
 
+  boolean usesPhoto(boolean available) {
+    return available && on(PHOTO_MODE);
+  }
+
   float unit(Option o) {
     return get(o) / 100f;
   }

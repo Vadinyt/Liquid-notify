@@ -125,3 +125,22 @@ assert lit[80,120,0] < 160 and abs(int(dark[80,120,0])-16) < 4, "white-text cont
 light_ink = render(14, overrides=dict(contrast, wash=(0,0,1,0)), child=midnight)
 assert light_ink[80,120,0]>100, "dark-text contrast missing"
 print("PASS: directional specular taper, thin rim, local contrast for both text colours")
+
+# The actual framebuffer-input shader must preserve a transparent target and respond to a fresh scene.
+live_src = next(root.rglob("LiveBackdrop.java")).read_text().split('"""')[1]
+live_effect = skia.RuntimeEffect.MakeForShader(live_src)
+def live(scene, displacement):
+    build = skia.RuntimeShaderBuilder(live_effect)
+    build.setChild("scene", scene.makeShader())
+    for name, val in {"size": (240,160), "radii": (24,24), "optics": (displacement,24,.72,0),
+                      "finish": (0,1,0,0)}.items():
+        build.setUniform(name, list(val))
+    dst = skia.Surface(240,160)
+    dst.getCanvas().drawPaint(skia.Paint(Shader=build.makeShader()))
+    return dst.makeImageSnapshot().toarray(colorType=skia.ColorType.kRGBA_8888_ColorType)
+native0, native1 = live(image,0), live(image,24)
+assert np.array_equal(native0[80,120],native1[80,120])
+assert np.max(abs(native0[80,3,:3].astype(int)-native1[80,3,:3].astype(int)))>24
+empty = skia.Image.fromarray(np.zeros_like(pixels),colorType=skia.ColorType.kRGBA_8888_ColorType)
+assert np.max(live(empty,24))==0
+print("PASS: live-layer shader transmits transparent input, preserves the centre and bends scene detail")

@@ -99,10 +99,10 @@ final class Preview extends View {
 
   void reloadPhoto() {
     Context ctx = getContext().getApplicationContext();
-    long revision = Bridge.prefs(ctx).getLong("photoRevision", 0);
+    long revision = c.on(PHOTO_MODE) ? Bridge.prefs(ctx).getLong("photoRevision", 0) : -1;
     if (photoRevision == revision) return;
     photoRevision = revision;
-    if (!BackdropPhoto.exists(ctx)) {
+    if (!c.usesPhoto(BackdropPhoto.exists(ctx))) {
       usePreview(demo);
       return;
     }
@@ -137,6 +137,7 @@ final class Preview extends View {
 
   void config(Config next) {
     c = next;
+    reloadPhoto();
     for (Material m : layers) m.configure(c);
     invalidate();
   }

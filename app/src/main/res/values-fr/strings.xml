@@ -80,7 +80,7 @@
     <string name="progress">Couleur de la progression</string>
     <string name="media_rim">Reflet du lecteur</string>
     <string name="shade_on">Personnaliser le fond du volet</string>
-    <string name="shade_blur">Flou du fond d’écran</string>
+    <string name="shade_blur">Flou du volet</string>
     <string name="dim">Assombrissement</string>
     <string name="shade_color">Couleur du volet</string>
     <string name="shade_tint">Intensité de la teinte</string>
@@ -94,9 +94,9 @@
     <string name="logging">Journal de diagnostic</string>
     <string name="base_color">Couleur du verre</string>
     <string name="choose_photo">Choisir une image pour le volet</string>
-    <string name="clear_photo">Revenir au fond d’écran système</string>
-    <string name="photo_hint">Le volet déverrouillé peut utiliser le fond fixe, une image du fond d’accueil Samsung ou sa miniature. Tu peux aussi choisir une image pour le volet.</string>
-    <string name="optics_hint">La réfraction courbe les détails de l’image au bord de la carte. Si le diagnostic indique « Reflets seuls », choisis une image dans Volet et boutons.</string>
+    <string name="clear_photo">Supprimer la photo choisie</string>
+    <string name="photo_hint">Par défaut, le volet suit ce que One UI affiche derrière les notifications. Choisir une photo active un fond fixe facultatif.</string>
+    <string name="optics_hint">Les bords courbent les détails du calque quand Android les fournit. Sur un fond uniforme, les reflets et la transparence restent visibles.</string>
     <string name="replay">Rejouer le ressort dans l’aperçu</string>
     <string name="backdrop">Dernière source vérifiée</string>
     <string name="last_mount">Maximum à la dernière ouverture</string>
@@ -104,19 +104,18 @@
     <string name="last_media">Dernier lecteur dessiné</string>
     <string name="impulses">Ressorts déclenchés dans cette session</string>
     <string name="unseen">En attente du premier affichage</string>
-    <string name="source_system">Fond d’écran système fixe</string>
     <string name="source_photo">Image choisie pour le volet</string>
-    <string name="source_live">Aucune image d’accueil fournie par le service</string>
-    <string name="source_denied">Accès au fond système restreint</string>
+    <string name="source_denied">Accès à la photo refusé</string>
     <string name="source_unreadable">Aucune image lisible</string>
     <string name="backend_canvas">Reflets de secours (Canvas)</string>
-    <string name="backend_surface">Reflets seuls (AGSL)</string>
+    <string name="backend_surface">Verre transparent et reflets (AGSL)</string>
     <string name="backend_texture">Réfraction sur image (AGSL)</string>
     <string name="backend_art">Réfraction sur la pochette (AGSL)</string>
     <string name="motion_amount">Amplitude du mouvement</string>
-    <string name="source_frame">Image du fond d’accueil fournie par Samsung</string>
-    <string name="source_thumb">Miniature du fond d’accueil Samsung</string>
     <string name="row_frames">Dessins de carte avec déformation de la ligne</string>
     <string name="preview_calendar">Agenda</string>
     <string name="preview_reminder">Rendez-vous à 18 h</string>
+    <string name="source_native">One UI · scène actuelle</string>
+    <string name="photo_mode">Afficher la photo choisie</string>
+    <string name="backend_live">Lentille sur le calque du volet (effet soumis)</string>
 </resources>

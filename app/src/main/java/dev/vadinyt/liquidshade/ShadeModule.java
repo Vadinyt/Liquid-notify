@@ -99,7 +99,11 @@ public final class ShadeModule extends XposedModule {
       Class<?> r = cl.loadClass(ROW), b = cl.loadClass(BG);
       Class<?> recoil = cl.loadClass("androidx.appcompat.graphics.drawable.SeslRecoilDrawable");
       runtime.background = field(b, "mBackground", recoil);
-      runtime.onLock = field(b, "mOnKeyguard", boolean.class);
+      runtime.onLock =
+          field(
+              cl.loadClass(PKG + ".statusbar.notification.row.ActivatableNotificationView"),
+              "mOnKeyguard",
+              boolean.class);
       runtime.headsUp = field(r, "mIsHeadsUp", boolean.class);
       runtime.child = r.getDeclaredMethod("isChildInGroup");
       after(r, "onAttachedToWindow", v -> runtime.row((View) v));

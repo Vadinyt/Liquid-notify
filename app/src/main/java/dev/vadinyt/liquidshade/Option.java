@@ -34,6 +34,7 @@ enum Option {
   PROGRESS(R.string.media, R.string.progress, 0, 2),
   MEDIA_RIM(R.string.media, R.string.media_rim, 49, 100),
   SHADE_ON(R.string.shade, R.string.shade_on, 1, 1),
+  PHOTO_MODE(R.string.shade, R.string.photo_mode, 0, 1),
   SHADE_BLUR(R.string.shade, R.string.shade_blur, 39, 100),
   DIM(R.string.shade, R.string.dim, 12, 100),
   SHADE_COLOR(R.string.shade, R.string.shade_color, 0xff7391B4, -1),

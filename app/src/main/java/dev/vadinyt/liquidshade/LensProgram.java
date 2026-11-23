@@ -119,11 +119,24 @@ half4 main(float2 point) {
   float alpha=aa*detail.x;
   if(body.z>.5)alpha*=coverage;
   if(detail.y>0.0)alpha*=1.0-smoothstep(1.0,max(1.01,detail.y),inset);
+  if(body.z>.5 && surface.z<.5) {
+    float dim=clamp(wash.x+wash.y*(1.0-y),0.0,.85);
+    float a=shade.a+(1.0-shade.a)*dim;
+    return half4(shade.rgb*shade.a*(1.0-dim)*alpha,a*alpha);
+  }
   half4 clearGlass=half4(0);
   if(surface.z<.5 || (coverage<1.0 && body.z<.5)) {
     // Premultiplied decoration over the real compositor output. No image sampling here.
     // Keep a directional reflection when Samsung supplies only a compositor backdrop.
-    shine=clamp(shine+finish.w*.50*band*band*(key+.4*fill),0.0,.88);
+    // Narrow specular arc over a broader, softer shoulder. The far lip sits in shade.
+    float facingArc=.5+.5*facing;
+    float fresnel=pow(sin(angle),3.0);
+    float indexWeight=.45+.55*clamp(optic.x/(12.0*surface.w),0.0,1.0);
+    float shoulder=finish.w*indexWeight*fresnel*(.11+.61*key+.23*fill);
+    float bouncePos=bevel*(.19+.19*(1.0-facingArc));
+    float bounce=exp(-abs(inset-bouncePos)/max(.65,surface.w*(.44+.42*optic.z)));
+    shine=clamp(shine+shoulder+finish.w*.27*bounce*(fill+.22*key),0.0,.90);
+    shadow+=finish.w*.15*band*(1.0-band)*pow(1.0-facingArc,2.0);
     float tintA=tone.z;
     float3 tintRGB=mix(float3(dot(accent.rgb,float3(.2126,.7152,.0722))),accent.rgb,tone.x+tone.y*.35);
     float bodyA=tintA+(1.0-tintA)*detail.w;

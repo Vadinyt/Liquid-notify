@@ -80,7 +80,7 @@
     <string name="progress">Progress colour</string>
     <string name="media_rim">Media highlight</string>
     <string name="shade_on">Style the shade backdrop</string>
-    <string name="shade_blur">Wallpaper blur</string>
+    <string name="shade_blur">Shade blur</string>
     <string name="dim">Background dimming</string>
     <string name="shade_color">Shade tint colour</string>
     <string name="shade_tint">Shade tint intensity</string>
@@ -94,9 +94,9 @@
     <string name="logging">Diagnostic logging</string>
     <string name="base_color">Glass tint colour</string>
     <string name="choose_photo">Choose a shade image</string>
-    <string name="clear_photo">Use system wallpaper again</string>
-    <string name="photo_hint">The unlocked shade can use a static wallpaper, a Samsung home wallpaper frame or its thumbnail. You can also choose a local image.</string>
-    <string name="optics_hint">Refraction bends the image at the rim. On a smooth background it can be subtle. If Diagnostics reports lighting only, choose an image under Shade and footer.</string>
+    <string name="clear_photo">Remove the selected photo</string>
+    <string name="photo_hint">By default the shade follows the scene One UI draws behind notifications. Choosing a photo enables an optional fixed background.</string>
+    <string name="optics_hint">Edges bend details in the shade layer when Android provides them. On a uniform backdrop the highlights and transparency remain visible.</string>
     <string name="replay">Replay the spring in the preview</string>
     <string name="backdrop">Last backdrop check</string>
     <string name="last_mount">Peak at last opening</string>
@@ -104,19 +104,18 @@
     <string name="last_media">Last player drawn</string>
     <string name="impulses">Spring starts this session</string>
     <string name="unseen">Awaiting first observation</string>
-    <string name="source_system">Static system wallpaper</string>
     <string name="source_photo">Selected shade image</string>
-    <string name="source_live">Wallpaper service supplied no home image</string>
-    <string name="source_denied">Wallpaper access restricted</string>
+    <string name="source_denied">Photo access denied</string>
     <string name="source_unreadable">No readable image</string>
     <string name="backend_canvas">Canvas lighting</string>
-    <string name="backend_surface">Lighting only (AGSL)</string>
+    <string name="backend_surface">Transparent glass and reflections (AGSL)</string>
     <string name="backend_texture">Image refraction (AGSL)</string>
     <string name="backend_art">Artwork edge refraction (AGSL)</string>
     <string name="motion_amount">Motion amplitude</string>
-    <string name="source_frame">Home wallpaper frame supplied by Samsung</string>
-    <string name="source_thumb">Samsung home wallpaper thumbnail</string>
     <string name="row_frames">Card draws with a whole-row transform</string>
     <string name="preview_calendar">Calendar</string>
     <string name="preview_reminder">Meeting at 6 PM</string>
+    <string name="source_native">One UI · current scene</string>
+    <string name="photo_mode">Use the selected photo</string>
+    <string name="backend_live">Shade-layer lens (effect submitted)</string>
 </resources>

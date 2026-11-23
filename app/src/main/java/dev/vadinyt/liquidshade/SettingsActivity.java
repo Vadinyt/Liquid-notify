@@ -194,7 +194,6 @@ public final class SettingsActivity extends Activity {
         section == 3
             ? Material.Kind.MEDIA
             : section == 4 ? Material.Kind.FOOTER : Material.Kind.CARD;
-    preview.reloadPhoto();
     preview.config(cfg);
     if (section == 0)
       choice(
@@ -225,12 +224,16 @@ public final class SettingsActivity extends Activity {
         command(
             R.string.clear_photo,
             () -> {
+              cfg.set(PHOTO_MODE, 0);
+              changed();
               BackdropPhoto.clear(this);
               render();
             });
     }
     if (section == 5) command(R.string.replay, preview::replay);
-    for (Option o : Config.OPTIONS) if (o.section == SECTIONS[section]) control(o);
+    for (Option o : Config.OPTIONS)
+      if (o.section == SECTIONS[section] && (o != PHOTO_MODE || BackdropPhoto.exists(this)))
+        control(o);
     if (section == 0)
       command(
           R.string.reset,
@@ -468,11 +471,8 @@ public final class SettingsActivity extends Activity {
               + "  ·  "
               + getString(
                   switch (p.getInt("source", 0)) {
-                    case WallpaperSource.HOME_FRAME -> R.string.source_frame;
-                    case WallpaperSource.HOME_THUMB -> R.string.source_thumb;
-                    case WallpaperSource.SYSTEM -> R.string.source_system;
+                    case WallpaperSource.NATIVE -> R.string.source_native;
                     case WallpaperSource.PHOTO -> R.string.source_photo;
-                    case WallpaperSource.LIVE -> R.string.source_live;
                     case WallpaperSource.DENIED -> R.string.source_denied;
                     case WallpaperSource.UNREADABLE -> R.string.source_unreadable;
                     default -> R.string.unseen;
@@ -494,6 +494,7 @@ public final class SettingsActivity extends Activity {
     return getString(
         switch (code) {
           case Material.CANVAS -> R.string.backend_canvas;
+          case Material.LIVE -> R.string.backend_live;
           case Material.SURFACE -> R.string.backend_surface;
           case Material.TEXTURE -> R.string.backend_texture;
           case Material.ARTWORK -> R.string.backend_art;
@@ -529,6 +530,10 @@ public final class SettingsActivity extends Activity {
                 runOnUiThread(
                     () -> {
                       if (!isFinishing() && !isDestroyed()) {
+                        if (success) {
+                          cfg.set(PHOTO_MODE, 1);
+                          changed();
+                        }
                         toast(success ? R.string.success : R.string.failed);
                         render();
                       }

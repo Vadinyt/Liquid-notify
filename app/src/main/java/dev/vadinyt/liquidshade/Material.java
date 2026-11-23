@@ -27,6 +27,13 @@ final class Material extends GradientDrawable {
   Config cfg;
   boolean grouped, darkText, edgeOnly, allowTexture = true, shaderFailed;
   int artwork;
+  boolean useLiveBackdrop;
+  private WeakReference<android.widget.ImageView> mediaImage;
+
+  void setMediaImage(android.widget.ImageView v) {
+    if ((mediaImage == null ? null : mediaImage.get()) != v) mediaImage = new WeakReference<>(v);
+  }
+
   private final RectF box = new RectF();
   private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.DITHER_FLAG);
   private final Matrix viewToScreen = new Matrix(),
@@ -58,7 +65,7 @@ final class Material extends GradientDrawable {
   }
 
   Events events;
-  static final int CANVAS = 1, SURFACE = 2, TEXTURE = 3, ARTWORK = 4;
+  static final int CANVAS = 1, SURFACE = 2, TEXTURE = 3, ARTWORK = 4, LIVE = 5;
   private int lastBackend;
 
   private void rendered(int backend) {
@@ -77,7 +84,7 @@ final class Material extends GradientDrawable {
 
   private BitmapShader sampler;
   private RuntimeShader program;
-  private final NativeBlur nativeBlur = new NativeBlur();
+  private final LiveBackdrop live = new LiveBackdrop();
   private Shader highlightGradient, shadeGradient;
   private int shadeHeight, shadeDim, shadeEnd;
   private int gradientWidth, gradientHeight, gradientColor, gradientAlpha;
@@ -127,7 +134,6 @@ final class Material extends GradientDrawable {
   private boolean pressed, entering;
   private float swipePull;
   private int headerBottom = -1;
-  private final Rect bodyBounds = new Rect();
 
   void protectHeader(int bottom) {
     if (headerBottom == bottom) return;
@@ -325,7 +331,7 @@ final class Material extends GradientDrawable {
   }
 
   void suspend() {
-    nativeBlur.suspend();
+    live.release();
     if (rowMotion != null) rowMotion.clear();
     tickHasRow = false;
     if (spring != null) spring.cancel();
@@ -379,7 +385,8 @@ final class Material extends GradientDrawable {
    * Only accept an opaque full-bleed mapping whose exact pixels we can reconstruct.
    */
   private Bitmap artworkSource(android.widget.ImageView v) {
-    if (!(v.getDrawable() instanceof BitmapDrawable d)
+    if (v.getForeground() != null
+        || !(v.getDrawable() instanceof BitmapDrawable d)
         || d.getGravity() != android.view.Gravity.FILL
         || d.getTileModeX() != null
         || d.getTileModeY() != null
@@ -432,7 +439,6 @@ final class Material extends GradientDrawable {
     if (v == null || frame == null || cfg == null || getBounds().isEmpty() || alpha == 0) return;
     boolean media = kind == Kind.MEDIA, field = kind == Kind.SHADE, card = kind == Kind.CARD;
     if (field && headerBottom >= getBounds().bottom) {
-      nativeBlur.suspend();
       return;
     }
     float dp = v.getResources().getDisplayMetrics().density;
@@ -499,21 +505,64 @@ final class Material extends GradientDrawable {
             : 0f;
     blur.select(source.levels, spread, frame.getWidth(), frame.getHeight(), mode == 2);
     Bitmap bitmap = allowTexture ? blur.fine : null;
+    android.widget.ImageView cover = mediaImage == null ? null : mediaImage.get();
     Bitmap album =
         media && edgeOnly
-            ? (v instanceof android.widget.ImageView cover ? artworkSource(cover) : previewAlbum)
+            ? (cover != null && MediaArtwork.aligned(cover, v)
+                ? artworkSource(cover)
+                : previewAlbum)
             : null;
-    if (album != null) bitmap = album;
+    if (media && edgeOnly) bitmap = album;
     boolean hasImage = bitmap != null;
-    if (hasImage || !field) positionChanged();
+    // This node only sees earlier content in this HWUI target. Other windows stay in Samsung's
+    // compositor.
+    boolean liveSubmitted = false;
+    float bevel = Math.min(limit, dp * (2f + 23 * cfg.unit(BEVEL)) * (.8f + .6f * cfg.unit(DEPTH)));
+    float displacement =
+        field
+            ? 0
+            : dp * (3 + 25 * cfg.unit(DEPTH)) * cfg.unit(media ? MEDIA_REFRACTION : REFRACTION);
+    if (hasImage || !field || useLiveBackdrop) positionChanged();
+    if (!hasImage && useLiveBackdrop && !edgeOnly && mode != 2 && mapped) {
+      float savedTop = box.top;
+      if (field) box.top = Math.max(box.top, headerBottom);
+      // Keep the local pixel mapping exact during clipping, scale and rotation transitions.
+      boolean axis =
+          Math.abs(currentMap[0] - 1) < .005f
+              && Math.abs(currentMap[4] - 1) < .005f
+              && Math.abs(currentMap[1]) < .001f
+              && Math.abs(currentMap[3]) < .001f;
+      boolean inside =
+          currentMap[2] + box.left >= 0
+              && currentMap[2] + box.right <= frame.getWidth() + .5f
+              && currentMap[5] + box.top >= Math.max(0, headerBottom)
+              && currentMap[5] + box.bottom <= frame.getHeight() + .5f;
+      if (axis && inside && (!field || spread > .25f)) {
+        liveSubmitted =
+            live.draw(
+                canvas,
+                box,
+                top,
+                bottom,
+                displacement,
+                bevel,
+                cfg.unit(COMPRESSION),
+                spread * .52f,
+                field ? 0 : dp * .8f * cfg.unit(DISPERSION),
+                field ? 1f : .3f + 1.4f * cfg.unit(SATURATION),
+                field ? 0 : .42f * cfg.unit(VIBRANCY),
+                card && cfg.on(CONTRAST) ? (darkText ? -1 : 1) : 0,
+                alpha);
+      }
+      box.top = savedTop;
+    }
     if (mapped
-        && (hasImage || !field)
+        && (hasImage || !field || useLiveBackdrop)
         && !shaderFailed
         && canvas.isHardwareAccelerated()
         && frame.getWidth() > 0
         && frame.getHeight() > 0) {
       try {
-        nativeBlur.suspend();
         if (program == null) {
           program = new RuntimeShader(LensProgram.SOURCE);
           program.setInputShader("src", blank);
@@ -543,12 +592,6 @@ final class Material extends GradientDrawable {
           program.setInputShader("clearSrc", full == null ? blank : filtered(full));
           fullBound = full;
         }
-        float bevel =
-            Math.min(limit, dp * (2f + 23 * cfg.unit(BEVEL)) * (.8f + .6f * cfg.unit(DEPTH)));
-        float displacement =
-            field
-                ? 0
-                : dp * (3 + 25 * cfg.unit(DEPTH)) * cfg.unit(media ? MEDIA_REFRACTION : REFRACTION);
         program.setFloatUniform("center", box.centerX(), box.centerY());
         program.setFloatUniform("extent", box.width() / 2, box.height() / 2);
         program.setFloatUniform("mapX", currentMap[0], currentMap[1], currentMap[2]);
@@ -601,21 +644,19 @@ final class Material extends GradientDrawable {
         paint.setColor(Color.WHITE);
         paint.setShader(program);
         canvas.drawRect(box, paint);
-        rendered(album != null ? ARTWORK : hasImage ? TEXTURE : SURFACE);
+        rendered(album != null ? ARTWORK : hasImage ? TEXTURE : liveSubmitted ? LIVE : SURFACE);
         return;
       } catch (RuntimeException | OutOfMemoryError e) {
         shaderFailed = true;
         release();
       }
     }
-    rendered(CANVAS);
+    rendered(liveSubmitted ? LIVE : CANVAS);
     // Native transparency preserves Samsung's existing compositor blur where available.
     paint.setShader(null);
     paint.setStyle(Paint.Style.FILL);
     if (field) {
-      bodyBounds.set(getBounds());
-      bodyBounds.top = Math.max(bodyBounds.top, headerBottom);
-      nativeBlur.draw(v, canvas, bodyBounds, Math.round(spread));
+
       box.top = Math.max(box.top, headerBottom);
     }
     corners[0] = corners[1] = corners[2] = corners[3] = top;

@@ -7,6 +7,31 @@ import org.junit.Test;
 
 public class ConfigTest {
   @Test
+  public void upgradingOrRestoringAnOldFileUsesTheNativeShade() throws Exception {
+    Config old = Config.decode("{\"schema\":1,\"preset\":3,\"SHADE_ON\":1}");
+    assertFalse(old.usesPhoto(true));
+    old.set(Option.PHOTO_MODE, 1);
+    assertFalse(old.usesPhoto(false));
+    assertTrue(Config.decode(old.encode()).usesPhoto(true));
+    assertFalse(new Config().usesPhoto(true));
+  }
+
+  private static final class Row {
+    public boolean mOnKeyguard;
+  }
+
+  @Test
+  public void lockCheckUsesTheRegisteredRowAndFailsClosedForOtherViews() throws Exception {
+    Row row = new Row();
+    java.lang.reflect.Field flag = Row.class.getDeclaredField("mOnKeyguard");
+    assertTrue(ShadeAccess.unlockedRow(flag, row));
+    assertFalse(ShadeAccess.unlockedRow(flag, new Object()));
+    row.mOnKeyguard = true;
+    assertFalse(ShadeAccess.unlockedRow(flag, row));
+    assertFalse(ShadeAccess.unlockedRow(null, row));
+  }
+
+  @Test
   public void everyOptionSurvivesExportImport() throws Exception {
     Config config = new Config();
     config.select(3);

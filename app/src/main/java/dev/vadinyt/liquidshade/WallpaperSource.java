@@ -7,23 +7,11 @@ import android.os.*;
 import java.io.*;
 import java.util.concurrent.Executor;
 
-/**
- * A bounded shade backing selected from the current user’s home wallpaper or chosen photo. Never
- * reads a window surface.
- */
+/** Optional, user-selected shade backing. Native mode needs no pixel source or cache. */
 final class WallpaperSource {
   Bitmap image;
   Bitmap[] levels = new Bitmap[0];
-
-  static final int UNKNOWN = 0,
-      SYSTEM = 1,
-      PHOTO = 2,
-      LIVE = 3,
-      DENIED = 4,
-      UNREADABLE = 5,
-      HOME_FRAME = 6,
-      HOME_THUMB = 7;
-  private final HomeWallpaper home = new HomeWallpaper();
+  static final int UNKNOWN = 0, PHOTO = 2, DENIED = 4, UNREADABLE = 5, NATIVE = 8;
   int status = UNKNOWN;
   private volatile int generation;
   float luminance = .45f;
@@ -33,23 +21,7 @@ final class WallpaperSource {
     status = UNKNOWN;
     image = null;
     levels = new Bitmap[0];
-  }
-
-  // Samsung also hosts static image wallpapers through a service. Prefer the reported
-  // wallpaper type when present (SEM_WALLPAPER_TYPE_IMAGE); fall back to Android's API.
-  private static boolean isStatic(WallpaperManager wm, int which) {
-    try {
-      int type =
-          (int)
-              WallpaperManager.class.getMethod("semGetWallpaperType", int.class).invoke(wm, which);
-      int imageType = WallpaperManager.class.getField("SEM_WALLPAPER_TYPE_IMAGE").getInt(null);
-      if (type >= 0) return type == imageType;
-    } catch (ReflectiveOperationException | RuntimeException ignored) {
-    }
-    return (Build.VERSION.SDK_INT >= 34
-            ? wm.getWallpaperInfo(WallpaperManager.FLAG_SYSTEM)
-            : wm.getWallpaperInfo())
-        == null;
+    luminance = .45f;
   }
 
   static float measureLight(Bitmap b) {
@@ -62,52 +34,18 @@ final class WallpaperSource {
     return sum / 16;
   }
 
-  // Executed under the SystemUI UID and guarded by its runtime permission grant.
-  @android.annotation.SuppressLint("MissingPermission")
-  void refresh(
-      Context ui, Executor worker, Handler main, int maxEdge, boolean custom, Runnable ready) {
+  void loadPhoto(Context ui, Executor worker, Handler main, int maxEdge, Runnable ready) {
     int token = ++generation;
-    final Bitmap previous = image;
-    final Bitmap[] previousLevels = levels;
     worker.execute(
         () -> {
           if (token != generation) return;
           Bitmap result = null;
           int reason = UNREADABLE;
           try {
-            if (custom) {
-              result =
-                  BackdropPhoto.decode(
-                      ImageDecoder.createSource(ui.getContentResolver(), Bridge.PHOTO), maxEdge);
-              if (result != null) reason = PHOTO;
-            } else {
-              WallpaperManager wm = ui.getSystemService(WallpaperManager.class);
-              if (ui.checkSelfPermission("android.permission.READ_WALLPAPER_INTERNAL")
-                  != android.content.pm.PackageManager.PERMISSION_GRANTED) reason = DENIED;
-              else if (HomeWallpaper.unlocked(ui)) {
-                boolean fixed = false;
-                try {
-                  fixed = isStatic(wm, home.homeFlag());
-                } catch (RuntimeException ignored) {
-                }
-                if (fixed) {
-                  try {
-                    result =
-                        HomeWallpaper.decode(
-                            wm.getWallpaperFile(WallpaperManager.FLAG_SYSTEM), maxEdge);
-                  } catch (IOException | IllegalArgumentException unavailable) {
-                  }
-                }
-                if (result != null) reason = SYSTEM;
-                else {
-                  HomeWallpaper.Sample capture = home.read(ui, wm, maxEdge);
-                  if (capture != null) {
-                    result = capture.pixels();
-                    reason = capture.status();
-                  } else reason = fixed ? UNREADABLE : LIVE;
-                }
-              }
-            }
+            result =
+                BackdropPhoto.decode(
+                    ImageDecoder.createSource(ui.getContentResolver(), Bridge.PHOTO), maxEdge);
+            if (result != null) reason = PHOTO;
           } catch (SecurityException denied) {
             reason = DENIED;
           } catch (RuntimeException | IOException | OutOfMemoryError unavailable) {
@@ -116,13 +54,7 @@ final class WallpaperSource {
           Bitmap[] filtered;
           try {
             if (token != generation) return;
-            if (previous != null
-                && result != null
-                && previous.sameAs(result)
-                && previousLevels.length != 0) {
-              filtered = previousLevels;
-              result = previous;
-            } else filtered = BlurPyramid.build(result);
+            filtered = BlurPyramid.build(result);
           } catch (OutOfMemoryError | RuntimeException low) {
             filtered = new Bitmap[0];
             result = null;
@@ -131,21 +63,14 @@ final class WallpaperSource {
           float light = .45f;
           if (result != null) {
             light = measureLight(filtered[filtered.length - 1]);
-          } else
-            try {
-              WallpaperColors wc =
-                  ui.getSystemService(WallpaperManager.class)
-                      .getWallpaperColors(WallpaperManager.FLAG_SYSTEM);
-              if (wc != null) light = wc.getPrimaryColor().luminance();
-            } catch (RuntimeException ignored) {
-            }
+          }
           final Bitmap[] chain = filtered;
           final Bitmap next = result;
           final float level = light;
           final int why = reason;
           main.post(
               () -> {
-                if (token == generation && HomeWallpaper.unlocked(ui)) {
+                if (token == generation && ShadeAccess.unlocked(ui)) {
                   image = next;
                   levels = chain;
                   luminance = level;

@@ -70,7 +70,6 @@ final class ShadeRuntime
   java.util.function.Consumer<String> diagnostic;
   private int cardBackend, mediaBackend, sourceLast, lastMounted, motionEvents;
   private final WeakHashMap<View, WeakReference<View>> rowBackgrounds = new WeakHashMap<>();
-  private KeyguardManager keyguard;
 
   void connect(Context context) {
     if (Looper.myLooper() != main.getLooper()) {
@@ -80,7 +79,7 @@ final class ShadeRuntime
     if (connected) return;
     app = context.getApplicationContext();
     if (app == null) return;
-    keyguard = app.getSystemService(KeyguardManager.class);
+
     connected = true;
     unlocked = activeUserUnlocked();
     ContentObserver obs =
@@ -98,7 +97,7 @@ final class ShadeRuntime
     events.addAction(Intent.ACTION_SCREEN_ON);
     events.addAction(Intent.ACTION_USER_PRESENT);
     events.addAction("android.intent.action.USER_SWITCHED");
-    events.addAction(Intent.ACTION_WALLPAPER_CHANGED);
+
     events.addAction(Intent.ACTION_CONFIGURATION_CHANGED);
     app.registerReceiver(
         new BroadcastReceiver() {
@@ -107,7 +106,6 @@ final class ShadeRuntime
             unlocked = !Intent.ACTION_SCREEN_OFF.equals(i.getAction()) && activeUserUnlocked();
             if (!unlocked
                 || "android.intent.action.USER_SWITCHED".equals(i.getAction())
-                || Intent.ACTION_WALLPAPER_CHANGED.equals(i.getAction())
                 || Intent.ACTION_CONFIGURATION_CHANGED.equals(i.getAction())) {
               wallpaper.clear();
               requested = false;
@@ -125,11 +123,7 @@ final class ShadeRuntime
   }
 
   private boolean activeUserUnlocked() {
-    android.os.UserManager users = app.getSystemService(android.os.UserManager.class);
-    return users != null
-        && users.isUserForeground()
-        && users.isUserUnlocked()
-        && !keyguard.isKeyguardLocked();
+    return ShadeAccess.unlocked(app);
   }
 
   private void read() {
@@ -143,7 +137,7 @@ final class ShadeRuntime
             main.post(
                 () -> {
                   if (version != revision) return;
-                  boolean photo = b.getBoolean("photo");
+                  boolean photo = next.usesPhoto(b.getBoolean("photo"));
                   long stamp = b.getLong("photoRevision");
                   if (next.get(PERFORMANCE) != cfg.get(PERFORMANCE)
                       || customPhoto != photo
@@ -244,10 +238,12 @@ final class ShadeRuntime
               && SystemClock.elapsedRealtime() - lastLog > 1800) {
             lastLog = SystemClock.elapsedRealtime();
             diagnostic.accept(
-                "1.4 source="
+                "1.5 source="
                     + sourceLast
                     + " card="
                     + cardBackend
+                    + " media="
+                    + mediaBackend
                     + " open="
                     + open
                     + " peak="
@@ -393,10 +389,9 @@ final class ShadeRuntime
             if (classIs(direct, ShadeModule.ROW)) discoverRows(direct);
           }
         }
+        View content = named(v.getRootView(), "stack_expand_contents");
+        if (content != null) media(content, false);
         wakeAt(openedAt + 220);
-        if ((wallpaper.status == WallpaperSource.HOME_FRAME
-                || wallpaper.status == WallpaperSource.LIVE)
-            && openedAt - lastBackdropRequest > 4500) requested = false;
         if ((wallpaper.status == WallpaperSource.UNREADABLE
                 || wallpaper.status == WallpaperSource.DENIED)
             && SystemClock.elapsedRealtime() - lastBackdropRequest > 60000) requested = false;
@@ -477,6 +472,7 @@ final class ShadeRuntime
         drop(previous);
       rowBackgrounds.put(row, new WeakReference<>(bg));
     }
+    if (previous != bg) media(row, false);
     register(bg, CARD);
     if (loaded) applyOne(bg);
   }
@@ -512,16 +508,39 @@ final class ShadeRuntime
 
   void media(View root, boolean notification) {
     connect(root.getContext());
-    View art = named(root, "sec_album_art");
-    if (art instanceof ImageView) {
-      if (!notification) {
-        Binding old = surfaces.get(art);
-        if (old != null && old.kind == MEDIA) drop(art);
-        return;
-      }
-      register(art, MEDIA);
-      if (loaded) applyOne(art);
+    View player = named(root, "sec_qs_media_controls");
+    if (player == null || !classIs(player, ShadeModule.PKG + ".media.QSMediaCornerRoundedView"))
+      return;
+    boolean scoped = notification || hasNotificationMediaParent(player);
+    if (!scoped) {
+      if (surfaces.containsKey(player)) drop(player);
+      return;
     }
+    View mainArt = named(player, "sec_album_art"), alt = named(player, "shade_album_art");
+    View progress = named(player, "sec_media_progress_bar");
+    if (!(mainArt instanceof ImageView) || progress == null) return;
+    register(player, MEDIA);
+    Binding binding = surfaces.get(player);
+    binding.mediaSlot =
+        new MediaArtwork(
+            mainArt,
+            alt == null ? null : named(alt, "originImage"),
+            alt == null ? null : named(alt, "newImage"));
+    binding.progress = new WeakReference<>(progress instanceof ProgressBar bar ? bar : null);
+    if (loaded) applyOne(player);
+  }
+
+  private boolean hasNotificationMediaParent(View player) {
+    View host = stack.get();
+    if (host == null || host.getRootView() != player.getRootView()) return false;
+    if (ancestorView(player, host)) return true;
+    View item =
+        ancestor(
+            player,
+            ShadeModule.PKG + ".statusbar.phone.ongoingactivity.CardStackview.CardItemView");
+    if (item == null) return false;
+    View content = named(item, "stack_expand_contents");
+    return content != null && ancestorView(player, content);
   }
 
   void motion(View row, float push) {
@@ -616,6 +635,7 @@ final class ShadeRuntime
 
   private void safeRefresh() {
     try {
+      if (unlocked && app != null) unlocked = activeUserUnlocked();
       if (!loaded || blocked || hardPaused || !cfg.on(ENABLED) || !unlocked) {
         restore();
         if (wallpaper.image != null || requested) {
@@ -625,18 +645,17 @@ final class ShadeRuntime
         return;
       }
       View anchor = stage.get();
-      if (open && anchor != null && cfg.on(SHADE_ON) && !requested) {
+      if (open && customPhoto && anchor != null && cfg.on(SHADE_ON) && !requested) {
         requested = true;
         lastBackdropRequest = SystemClock.elapsedRealtime();
-        wallpaper.refresh(
+        wallpaper.loadPhoto(
             anchor.getContext(),
             images,
             main,
             new int[] {1920, 1280, 720}[cfg.get(PERFORMANCE)],
-            customPhoto,
             this::safeRefresh);
       }
-      if (wallpaper.status != WallpaperSource.UNKNOWN) sourceLast = wallpaper.status;
+      sourceLast = customPhoto && cfg.on(SHADE_ON) ? wallpaper.status : WallpaperSource.NATIVE;
       if (open) updateBody(anchor, stack.get());
       if (anchor != null) applyOne(anchor);
       for (View v : new ArrayList<>(surfaces.keySet())) if (v != null && v != anchor) applyOne(v);
@@ -677,7 +696,7 @@ final class ShadeRuntime
     LayerDrawable layer = null;
     if (eligible && b.kind == CARD) {
       View row = ancestor(v, ShadeModule.ROW);
-      eligible = cfg.on(CARDS_ON) && row != null && !onLock.getBoolean(v);
+      eligible = cfg.on(CARDS_ON) && row != null && ShadeAccess.unlockedRow(onLock, row);
       if (eligible) {
         grouped = (boolean) child.invoke(row);
         pinned = headsUp.getBoolean(row);
@@ -716,6 +735,7 @@ final class ShadeRuntime
               : new Material(v, frame, wallpaper, cfg, b.kind);
       b.idle = null;
       glass.events = this;
+      glass.useLiveBackdrop = true;
       glass.configure(cfg);
       if (layer != null) {
         Drawable orig = layer.getDrawable(0);
@@ -782,9 +802,10 @@ final class ShadeRuntime
               : (v.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK)
                   != Configuration.UI_MODE_NIGHT_YES;
     } else if (b.kind == MEDIA) {
-      g.artwork = b.art((ImageView) v);
-      View root = ancestor(v, ShadeModule.PKG + ".media.QSMediaCornerRoundedView");
-      View progress = root == null ? null : named(root, "sec_media_progress_bar");
+      ImageView art = b.mediaSlot == null ? null : b.mediaSlot.current(v);
+      g.setMediaImage(art);
+      g.artwork = b.art(art);
+      View progress = b.progress == null ? null : b.progress.get();
       int color = cfg.get(PROGRESS) == 2 && g.artwork != 0 ? g.artwork : cfg.get(HIGHLIGHT);
       if (progress instanceof ProgressBar p) b.setProgress(p, cfg.get(PROGRESS), color);
     }
@@ -862,7 +883,10 @@ final class ShadeRuntime
         }
       }
       if (!signedHeight && fullyVisibleAt == 0) wakeAt(openedAt + 385);
-      if (b.kind == MEDIA && v instanceof ImageView art && b.artChanged(art)) schedule();
+      if (b.kind == MEDIA
+          && v != null
+          && b.mediaSlot != null
+          && b.artChanged(b.mediaSlot.current(v))) schedule();
       if (v != null && m != null && v.isShown() && m.positionChanged()) v.invalidate();
     }
     return true;
