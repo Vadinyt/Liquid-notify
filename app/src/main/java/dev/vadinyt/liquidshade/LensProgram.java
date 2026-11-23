@@ -45,8 +45,15 @@ half3 softAt(float2 screen) {
 }
 half4 main(float2 point) {
   float2 p=point-center;
-  float r=p.y<0.0?radii.x:radii.y;
-  float2 q=abs(p)-extent+r;
+  float2 normp=p/max(extent,float2(1));
+  float spring=detail.z;
+  float2 contact=surface.xy;
+  float2 fromTouch=normp-contact;
+  float locality=exp(-1.9*dot(fromTouch,fromTouch));
+  // Local yielding bends the contacted part of the outline. At rest the exact SDF returns.
+  float2 shaped=p*(1.0+spring*locality*min(float2(.12),float2(surface.w*2.8)/max(extent,float2(1))));
+  float r=shaped.y<0.0?radii.x:radii.y;
+  float2 q=abs(shaped)-extent+r;
   float2 outer=max(q,0.0);
   float len=length(outer);
   float sd=len+min(max(q.x,q.y),0.0)-r;
@@ -57,11 +64,8 @@ half4 main(float2 point) {
   float band=clamp(1.0-inset/bevel,0.0,1.0);
   float slope=pow(band,1.65-.95*optic.z);
   float strength=optic.x*slope;
-  float2 normp=p/max(extent,float2(1));
-  float spring=detail.z;
-  float2 contact=surface.xy;
-  float locality=exp(-1.9*dot(normp-contact,normp-contact));
-  float2 offset=n*strength*(.58+.9*optic.z)*(1.0+.32*spring*locality);
+  float2 offset=n*strength*(.58+.9*optic.z)*(1.0+.43*spring*locality);
+  offset+=fromTouch*optic.x*.48*spring*locality*(1.0-band);
   float2 xy=toBackdrop(point);
   float y=clamp(xy.y/max(1.0,frame.y),0.0,1.0);
   float2 lamp=normalize(float2(-.62,-.84)+contact*min(.52,abs(spring)*.52));
@@ -72,7 +76,9 @@ half4 main(float2 point) {
   float ridge=exp(-abs(inset/bevel-(.32+.14*optic.z))*7.0)*slope;
   float spec=rim*(.07+.65*pow(abs(facing),3.0)+.19*crown);
   float reflection=finish.w*((.04+.18*crown)*slope+.34*ridge*max(-facing,0.0)+.033*(1.0-normp.y)*.5);
-  float shine=clamp(spec+reflection+finish.w*.36*abs(spring)*locality*(.28+.72*band),0.0,.92);
+  float glint=exp(-abs(dot(fromTouch,float2(.84,-.55))-.14*spring)*4.8);
+  float contactLight=abs(spring)*locality*((.10+.42*glint)*(.24+.76*band)+.14*ridge);
+  float shine=clamp(spec+reflection+(.55*finish.w+.45*finish.z)*contactLight,0.0,.92);
   float shadow=clamp((.09*finish.w+.045*optic.z)*slope*(1.0-max(facing,0.0)),0.0,.25);
   float alpha=aa*detail.x;
   if(detail.y>0.0)alpha*=1.0-smoothstep(1.0,max(1.01,detail.y),inset);

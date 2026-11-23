@@ -12,6 +12,7 @@ final class Preview extends View {
   private final Paint p = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
   private final Material[] layers;
   private final RectF area = new RectF();
+  private final Path mediaClip = new Path();
   private final Bitmap[] demo;
   private long photoRevision = Long.MIN_VALUE;
   private Config c;
@@ -138,8 +139,30 @@ final class Preview extends View {
                     ? MEDIA_ON
                     : mode == Material.Kind.FOOTER ? FOOTER : CARDS_ON);
     glass.allowTexture = c.on(SHADE_ON);
+    if (mode == Material.Kind.MEDIA) {
+      glass.edgeOnly = true;
+      // Draw a sharp album crop first. The same inverse crop feeds the edge-only production lens.
+      Bitmap album = demo[0];
+      float scale = Math.max(cw / (float) album.getWidth(), ch / (float) album.getHeight());
+      float aw = album.getWidth() * scale, ah = album.getHeight() * scale;
+      float ax = left + (cw - aw) / 2, ay = top + (ch - ah) / 2;
+      float radius =
+          Math.min(
+              Math.min(cw, ch) / 2f,
+              getResources().getDisplayMetrics().density * (6 + 44 * c.unit(MEDIA_RADIUS)));
+      area.set(left, top, left + cw, top + ch);
+      mediaClip.rewind();
+      mediaClip.addRoundRect(area, radius, radius, Path.Direction.CW);
+      int save = canvas.save();
+      canvas.clipPath(mediaClip);
+      area.set(ax, ay, ax + aw, ay + ah);
+      p.setColor(Color.WHITE);
+      canvas.drawBitmap(album, null, area, p);
+      canvas.restoreToCount(save);
+      glass.setPreviewAlbum(album, ax, ay, scale);
+    }
     if (active) glass.draw(canvas);
-    else {
+    else if (mode != Material.Kind.MEDIA) {
       p.setColor(0xff37414b);
       area.set(left, top, left + cw, top + ch);
       canvas.drawRoundRect(area, ch * .33f, ch * .33f, p);

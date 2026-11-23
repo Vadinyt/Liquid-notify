@@ -36,7 +36,15 @@ final class Material extends GradientDrawable {
   private final float[] artMatrix = new float[9], artUV = new float[4];
   private final float[] nextMap = new float[9], currentMap = new float[9];
   private boolean mapped;
-  private Bitmap bound, fullBound;
+  private Bitmap bound, fullBound, previewAlbum;
+
+  void setPreviewAlbum(Bitmap bitmap, float left, float top, float scale) {
+    previewAlbum = bitmap;
+    artUV[0] = artUV[1] = 1 / scale;
+    artUV[2] = -left / scale;
+    artUV[3] = -top / scale;
+  }
+
   private final Shader blank = new LinearGradient(0, 0, 1, 0, 0, 0, Shader.TileMode.CLAMP);
   private final LensSpring physics = new LensSpring();
 
@@ -325,7 +333,7 @@ final class Material extends GradientDrawable {
     if (!field && movement != 0) {
       // Optical squeeze happens inside the native hit target. Artwork and text keep their geometry.
       float squeeze = Math.max(0f, movement);
-      box.inset(dp * 1.5f * squeeze, dp * 1.9f * squeeze);
+      box.inset(dp * 2.3f * squeeze, dp * 2.8f * squeeze);
       radius = Math.max(0, Math.min(limit, radius + dp * 3 * movement));
     }
     float top = radius, bottom = radius;
@@ -380,8 +388,8 @@ final class Material extends GradientDrawable {
     Bitmap bitmap =
         allowTexture ? source.forBlur(spread, frame.getWidth(), frame.getHeight()) : null;
     Bitmap album =
-        media && edgeOnly && v instanceof android.widget.ImageView cover
-            ? artworkSource(cover)
+        media && edgeOnly
+            ? (v instanceof android.widget.ImageView cover ? artworkSource(cover) : previewAlbum)
             : null;
     if (album != null) bitmap = album;
     boolean hasImage = bitmap != null;

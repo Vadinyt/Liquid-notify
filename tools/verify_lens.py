@@ -77,3 +77,11 @@ assert render(12, overrides=art)[80, 120, 3] == 0, "overlay painted the album/co
 assert np.array_equal(render(0, overrides=dict(art, detail=(1, 0, 0, 0)))[80, 120],
                       pixels[51, 67]), "album crop misaligned"
 print("PASS: ten independent material controls, album mapping, untouched media centre")
+
+# A held press deforms the contacted edge locally even with all lighting disabled.
+geometry = {"surface": (.96, 0, 0, 2), "tone": (1, 0, 1, 0), "finish": (0, 0, 0, 0)}
+idle_mask = render(12, overrides=geometry)[:, :, 3]
+held_mask = render(12, overrides=dict(geometry, detail=(1, 0, 1, 0)))[:, :, 3]
+assert idle_mask[80, 203] > 200 and held_mask[80, 203] < 20
+assert idle_mask[80, 36] == held_mask[80, 36]
+print("PASS: local pressure deforms the contacted edge and preserves the opposite edge")
