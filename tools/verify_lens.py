@@ -95,6 +95,23 @@ composited = mat[:, :, :3] * alpha + (1 - alpha) * [16, 23, 36]
 assert np.linalg.norm(composited[36, 120]-composited[80, 120]) > 15, "bevel disappears on a dark native shade"
 print("PASS: internal bevel is visible above a uniform dark system backdrop")
 
+# Unlike an image-backed lens, native compositor mode cannot displace inaccessible pixels.
+# Its optically shaped edge must nevertheless respond to the refraction slider.
+native = {
+    "surface": (-.55, -.4, 0, 2),
+    "finish": (0, 1.5, .65, .65),
+    "tone": (1, .1, .12, 0),
+    "accent": (.88, .95, 1, 1)
+}
+weak = render(0, overrides=dict(native, optic=(0, 12, .65, 0)))
+strong = render(0, overrides=dict(native, optic=(36, 12, .65, 0)))
+native_difference = np.abs(weak.astype(int) - strong.astype(int)).max(axis=2)
+assert (native_difference > 3).sum() > 50, "native fallback refraction control became inert"
+bare = render(0, overrides=dict(native, tone=(1,.1,.05,0)))
+frost = render(0, overrides=dict(native, tone=(1,.1,.20,0)))
+assert frost[80,120,3] > bare[80,120,3] + 20, "native frosted face became inert"
+print("PASS: native no-source refraction contour and translucent frost are responsive")
+
 # The old full-window shader covered headers from other siblings. Check alpha on every
 # column above the native header boundary, including a shaded / dimmed input.
 body = {"extent": (120, 80), "radii": (0, 0), "body": (41, 16, 1),

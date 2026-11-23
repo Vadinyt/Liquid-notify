@@ -562,11 +562,16 @@ final class Material extends GradientDrawable {
     boolean transparentBackend = !hasImage && !liveSubmitted && !field && !edgeOnly;
     float reflection = field ? 0f : cfg.unit(REFLECTION);
     if (transparentBackend) {
+      // The real compositor scene is unavailable: use a thin, clear surface rather than
+      // darkening the card into an opaque plastic frame. Blur becomes mild face frost here.
       float frostLevel = Math.min(1f, spread / Math.max(1f, dp * 30f));
-      amount = Math.min(.68f, amount + .14f * frostLevel);
-      edge *= .45f + .34f * cfg.unit(REFRACTION) + .21f * cfg.unit(COMPRESSION);
-      reflection *= .75f;
-      border *= .84f;
+      amount = Math.min(.26f, .045f + .68f * amount + .075f * frostLevel);
+      // The broad optical shoulder only makes sense when it contains refracted pixels.
+      // Narrow it without changing the image-backed refraction geometry.
+      bevel = Math.min(bevel, dp * (4f + 7f * cfg.unit(BEVEL)));
+      edge *= .68f + .20f * cfg.unit(REFRACTION) + .12f * cfg.unit(COMPRESSION);
+      reflection *= .62f;
+      border = Math.min(border, dp * .70f);
     }
     if (mapped
         && (hasImage || !field || useLiveBackdrop)

@@ -14,6 +14,9 @@ final class Preview extends View {
   private final RectF area = new RectF();
   private final Path mediaClip = new Path();
   private final Bitmap[] demo;
+  private LinearGradient shadeGradient;
+  private RadialGradient shadeGlow;
+  private int shadeWidth, shadeHeight;
   private long photoRevision = Long.MIN_VALUE;
   private final android.text.TextPaint linePaint =
       new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
@@ -148,6 +151,30 @@ final class Preview extends View {
     invalidate();
   }
 
+  /** Conservative sample of the native shade's dark compositor. Never used in SystemUI. */
+  private void drawNativeScene(Canvas canvas, int w, int h) {
+    if (shadeWidth != w || shadeHeight != h) {
+      shadeWidth = w;
+      shadeHeight = h;
+      shadeGradient =
+          new LinearGradient(
+              0, 0, 0, h,
+              new int[] {0xff22313d, 0xff2d3d4b, 0xff202c37},
+              new float[] {0f, .46f, 1f},
+              Shader.TileMode.CLAMP);
+      shadeGlow =
+          new RadialGradient(
+              w * .18f, h * .16f, w * .85f,
+              new int[] {0x1d93b5c9, 0x083e7696, 0x00202c37},
+              null, Shader.TileMode.CLAMP);
+    }
+    p.setShader(shadeGradient);
+    canvas.drawRect(0, 0, w, h, p);
+    p.setShader(shadeGlow);
+    canvas.drawRect(0, 0, w, h, p);
+    p.setShader(null);
+  }
+
   void config(Config next) {
     c = next;
     reloadPhoto();
@@ -161,9 +188,13 @@ final class Preview extends View {
     if (w == 0 || h == 0) return;
     Material stage = layers[Material.Kind.SHADE.ordinal()];
     boolean textured = hasTexture();
-    // Native preview paints a representative scene first, then uses the *same* no-image
-    // material path as SystemUI. The optional demonstration samples the image as before.
-    if (!textured || !c.on(ENABLED) || !c.on(SHADE_ON)) {
+    // Two deliberately distinct scenes: the dark native approximation uses NO photo
+    // samples; the optical demo uses the original artwork. Never present the latter as
+    // the expected SystemUI output.
+    if (!textured) {
+      drawNativeScene(canvas, w, h);
+      source.luminance = .45f; // the same unknown luminance as WallpaperSource in SystemUI
+    } else {
       float scale =
           Math.max(w / (float) source.image.getWidth(), h / (float) source.image.getHeight());
       float bw = source.image.getWidth() * scale, bh = source.image.getHeight() * scale;
@@ -182,13 +213,13 @@ final class Preview extends View {
                 (w
                     * (mode == Material.Kind.FOOTER
                         ? .32f
-                        : mode == Material.Kind.CARD ? .83f : .65f)),
+                        : mode == Material.Kind.CARD ? .92f : .65f)),
         ch =
             (int)
                 (h
                     * (mode == Material.Kind.MEDIA
                         ? .72f
-                        : mode == Material.Kind.FOOTER ? .42f : .59f));
+                        : mode == Material.Kind.FOOTER ? .42f : .58f));
     int left = Math.max(0, Math.min(w - cw, (int) (w * x) - cw / 2)), top = (h - ch) / 2;
     Material glass = layers[mode.ordinal()];
     glass.setBounds(left, top, left + cw, top + ch);
