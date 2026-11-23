@@ -412,6 +412,16 @@ public final class GlassInstrumentation extends Instrumentation {
         green.getPixel(ix, iy) == 0xff56daae && rose.getPixel(ix, iy) == 0xff56daae,
         "foreground was filtered");
     int previous = backend;
+    // Disable both specular lobes for the displacement measurement. Only the background
+    // sample coordinates can then move the high-contrast stripes.
+    runOnMainSync(
+        () -> {
+          look.set(Option.RIM, 0);
+          look.set(Option.REFLECTION, 0);
+          panel[0].invalidate();
+        });
+    SystemClock.sleep(180);
+    Bitmap bent = copy();
     runOnMainSync(
         () -> {
           look.set(Option.REFRACTION, 0);
@@ -422,16 +432,16 @@ public final class GlassInstrumentation extends Instrumentation {
     int changed = 0;
     for (int y = 4; y < 28; y++)
       for (int x = 68; x < width - 60; x++) {
-        int c = rose.getPixel(at[0] + x, at[1] + y), d = flat.getPixel(at[0] + x, at[1] + y);
+        int c = bent.getPixel(at[0] + x, at[1] + y), d = flat.getPixel(at[0] + x, at[1] + y);
         if (Math.abs(Color.green(c) - Color.green(d)) > 24) changed++;
       }
     // Also measure the bent vertical stripes on the left and right walls of the lens.
     for (int y = 40; y < height - 40; y++)
       for (int x = 5; x < 36; x++) {
         int rx = at[0] + width - x, lx = at[0] + x, py = at[1] + y;
-        if (Math.abs(Color.green(rose.getPixel(rx, py)) - Color.green(flat.getPixel(rx, py))) > 24)
+        if (Math.abs(Color.green(bent.getPixel(rx, py)) - Color.green(flat.getPixel(rx, py))) > 24)
           changed++;
-        if (Math.abs(Color.green(rose.getPixel(lx, py)) - Color.green(flat.getPixel(lx, py))) > 24)
+        if (Math.abs(Color.green(bent.getPixel(lx, py)) - Color.green(flat.getPixel(lx, py))) > 24)
           changed++;
       }
     if (requireLive || previous == Material.LIVE) {
