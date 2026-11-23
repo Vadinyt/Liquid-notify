@@ -26,13 +26,13 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          mkdir -p "$HOME/.android"
+          key_file="$RUNNER_TEMP/liquidshade.jks"
           if [[ -n "$LIQUIDSHADE_SIGNING_JKS_B64" ]]; then
-            printf '%s' "$LIQUIDSHADE_SIGNING_JKS_B64" | base64 --decode > "$HOME/.android/debug.keystore"
+            printf '%s' "$LIQUIDSHADE_SIGNING_JKS_B64" | base64 --decode > "$key_file"
           else
-            keytool -genkeypair -noprompt -storetype JKS -keystore "$RUNNER_TEMP/liquidshade.jks" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 3072 -validity 3650 -dname "CN=LiquidShade CI"
-            cp "$RUNNER_TEMP/liquidshade.jks" "$HOME/.android/debug.keystore"
+            keytool -genkeypair -noprompt -storetype JKS -keystore "$key_file" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 3072 -validity 3650 -dname "CN=LiquidShade CI"
           fi
+          echo "LIQUIDSHADE_KEYSTORE=$key_file" >> "$GITHUB_ENV"
       - name: Verify the lens pixel contract
         run: |
           sudo apt-get update -qq
@@ -46,7 +46,10 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk dist/LiquidShade-1.1.0.apk
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/LiquidShade-1.1.0.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/LiquidShade-1.1.0.apk | tee "$RUNNER_TEMP/liquidshade-cert.txt"
+          expected=$(keytool -exportcert -keystore "$LIQUIDSHADE_KEYSTORE" -storepass android -alias androiddebugkey | sha256sum | cut -d' ' -f1)
+          actual=$(awk '/^Signer #1 certificate SHA-256 digest:/ {print $NF}' "$RUNNER_TEMP/liquidshade-cert.txt")
+          test "$actual" = "$expected"
           test "$(unzip -p dist/LiquidShade-1.1.0.apk META-INF/xposed/scope.list)" = com.android.systemui
           cd dist
           sha256sum LiquidShade-1.1.0.apk > SHA256SUMS
