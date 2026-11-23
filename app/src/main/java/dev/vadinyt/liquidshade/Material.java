@@ -562,8 +562,8 @@ final class Material extends GradientDrawable {
     boolean transparentBackend = !hasImage && !liveSubmitted && !field && !edgeOnly;
     float reflection = field ? 0f : cfg.unit(REFLECTION);
     if (transparentBackend) {
-      float frost = Math.min(1f, spread / Math.max(1f, dp * 30f));
-      amount = Math.min(.68f, amount + .14f * frost);
+      float frostLevel = Math.min(1f, spread / Math.max(1f, dp * 30f));
+      amount = Math.min(.68f, amount + .14f * frostLevel);
       edge *= .45f + .34f * cfg.unit(REFRACTION) + .21f * cfg.unit(COMPRESSION);
       reflection *= .75f;
       border *= .84f;
