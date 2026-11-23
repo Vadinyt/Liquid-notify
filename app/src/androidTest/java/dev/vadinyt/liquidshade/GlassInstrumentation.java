@@ -85,8 +85,20 @@ public final class GlassInstrumentation extends Instrumentation {
           Color.blue(center) > Color.red(center) + 75
               && Color.green(center) > Color.red(center) + 75,
           "backdrop sample missing " + Integer.toHexString(center));
+      int openingPixels = testReveal(after);
+      testFeedback();
       runOnMainSync(
           () -> {
+            row.setTranslationX(19);
+            glass.swipe(125);
+            check(
+                row.getAnimationMatrix() != null && row.getTranslationX() == 19,
+                "swipe motion missing");
+            glass.swipe(0);
+            check(
+                row.getAnimationMatrix() == null && row.getTranslationX() == 19,
+                "swipe did not release");
+            row.setTranslationX(0);
             Matrix foreign = new Matrix();
             foreign.setTranslate(3, 2);
             row.setAnimationMatrix(foreign);
@@ -101,6 +113,7 @@ public final class GlassInstrumentation extends Instrumentation {
             check(expected.equals(row.getAnimationMatrix()), "foreign matrix replaced");
             row.setAnimationMatrix(null);
           });
+      int headerPixels = testNativeHeader();
       report.putString(
           "stream",
           "LIQUIDSHADE_DEVICE_PASS marker="
@@ -113,7 +126,11 @@ public final class GlassInstrumentation extends Instrumentation {
               + rowFrames
               + " click="
               + clicks.get()
-              + " pipe=decoded");
+              + " openingTravelPx="
+              + openingPixels
+              + " protectedHeaderPixels="
+              + headerPixels
+              + " feedback=restored swipe=restored pipe=decoded");
       code = Activity.RESULT_OK;
     } catch (Throwable e) {
       android.util.Log.e("LiquidShadeTest", "Instrumentation failed", e);
@@ -122,6 +139,101 @@ public final class GlassInstrumentation extends Instrumentation {
       if (activity != null) runOnMainSync(() -> activity.finish());
       finish(code, report);
     }
+  }
+
+  private int testReveal(Rect rest) throws Exception {
+    runOnMainSync(
+        () -> {
+          config.set(Option.SPEED, 15);
+          config.set(Option.STIFFNESS, 40);
+          glass.reveal();
+        });
+    int travel = 0;
+    long until = SystemClock.uptimeMillis() + 600;
+    do {
+      travel = Math.max(travel, marker(copy()).top - rest.top);
+    } while (travel < 10 && SystemClock.uptimeMillis() < until);
+    check(travel >= 10, "opening travel missing: " + travel);
+    SystemClock.sleep(1550);
+    check(Math.abs(marker(copy()).top - rest.top) <= 1, "opening failed to return to rest");
+    return travel;
+  }
+
+  private void testFeedback() {
+    runOnMainSync(
+        () -> {
+          android.graphics.drawable.GradientDrawable original =
+              new android.graphics.drawable.GradientDrawable();
+          original.setColor(Color.RED);
+          original.setBounds(0, 0, 20, 20);
+          RecoilFeedback layer = new RecoilFeedback(original);
+          Bitmap pixels = Bitmap.createBitmap(20, 20, Bitmap.Config.ARGB_8888);
+          Canvas canvas = new Canvas(pixels);
+          layer.draw(canvas);
+          check(pixels.getPixel(10, 10) == 0, "Samsung idle fill obscures the lens");
+          layer.setState(new int[] {android.R.attr.state_focused});
+          layer.draw(canvas);
+          check(pixels.getPixel(10, 10) == Color.RED, "native focus missing");
+          layer.setColor(Color.BLUE);
+          layer.setState(new int[0]);
+          pixels.eraseColor(0);
+          layer.draw(canvas);
+          check(pixels.getPixel(10, 10) == 0, "idle fill returned after rebind");
+          original.draw(canvas);
+          check(pixels.getPixel(10, 10) == Color.BLUE, "native colour update lost on restoration");
+        });
+  }
+
+  // Recreate the failing z-order: a genuine Android clock and status marker in a lower
+  // sibling, followed by a full-height transparent panel whose drawable can obscure them.
+  private int testNativeHeader() throws Exception {
+    View[] plane = new View[1];
+    Material[] backdrop = new Material[1];
+    int boundary = 176;
+    runOnMainSync(
+        () -> {
+          FrameLayout scene = new FrameLayout(activity);
+          scene.setBackgroundColor(0xff182532);
+          TextClock clock = new TextClock(activity);
+          clock.setFormat12Hour("'17:38'");
+          clock.setFormat24Hour("'17:38'");
+          clock.setTextColor(Color.WHITE);
+          clock.setTextSize(22);
+          FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(230, 84);
+          lp.leftMargin = 16;
+          lp.topMargin = 50;
+          scene.addView(clock, lp);
+          View status = new View(activity);
+          status.setBackgroundColor(Color.MAGENTA);
+          FrameLayout.LayoutParams sp = new FrameLayout.LayoutParams(24, 18);
+          sp.leftMargin = 255;
+          sp.topMargin = 36;
+          scene.addView(status, sp);
+          plane[0] = new View(activity);
+          scene.addView(plane[0], new FrameLayout.LayoutParams(-1, -1));
+          backdrop[0] = new Material(plane[0], plane[0], source, config, Material.Kind.SHADE);
+          backdrop[0].protectHeader(boundary);
+          activity.setContentView(scene);
+        });
+    SystemClock.sleep(180);
+    int[] where = new int[2];
+    runOnMainSync(() -> plane[0].getLocationInWindow(where));
+    Bitmap original = copy();
+    runOnMainSync(() -> plane[0].setBackground(backdrop[0]));
+    SystemClock.sleep(180);
+    Bitmap glass = copy();
+    int tested = 0, bright = 0;
+    for (int y = 2; y < boundary; y++)
+      for (int x = 3; x < 296; x++) {
+        int a = original.getPixel(where[0] + x, where[1] + y);
+        check(a == glass.getPixel(where[0] + x, where[1] + y), "header overdraw at " + x + "," + y);
+        if (Color.red(a) > 200 && Color.green(a) > 200 && Color.blue(a) > 200) bright++;
+        tested++;
+      }
+    check(bright > 15, "clock glyphs missing in fixture");
+    int body = glass.getPixel(where[0] + 170, where[1] + boundary + 175);
+    check(Color.green(body) > Color.red(body) + 70, "wallpaper was not rendered below clock");
+    return tested;
   }
 
   private void install() {

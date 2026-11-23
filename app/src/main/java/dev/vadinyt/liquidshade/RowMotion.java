@@ -23,7 +23,15 @@ final class RowMotion {
     if (!owned) yielded = false;
   }
 
-  boolean frame(View bg, Rect bounds, float value, float amount, float x, float y) {
+  boolean frame(
+      View bg,
+      Rect bounds,
+      float value,
+      float amount,
+      float x,
+      float y,
+      boolean entering,
+      float swipe) {
     View v = row.get();
     if (v == null
         || !v.isAttachedToWindow()
@@ -40,13 +48,15 @@ final class RowMotion {
       yielded = true;
       return false;
     }
-    if (Math.abs(value) * amount < .002f) {
+    if ((Math.abs(value) + Math.abs(swipe)) * amount < .002f) {
       clear();
       return false;
     }
     int w = bounds.isEmpty() ? bg.getWidth() : bounds.width(),
         h = bounds.isEmpty() ? bg.getHeight() : bounds.height();
     if (w <= 0 || h <= 0) return false;
+    pose.entering = entering;
+    pose.swipe = swipe;
     pose.set(
         bg.getLeft() + bounds.left,
         bg.getTop() + bounds.top,

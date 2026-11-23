@@ -181,6 +181,33 @@ public final class ShadeModule extends XposedModule {
       runtime.footerCompatible = true;
     } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
     }
+    try {
+      Class<?> s = cl.loadClass(STACK);
+      Class<?> ambient = cl.loadClass(PKG + ".statusbar.notification.stack.AmbientState");
+      runtime.ambient = field(s, "mAmbientState", ambient);
+      runtime.scrimTop = field(ambient, "mNotificationScrimTop", float.class);
+    } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
+    }
+    try {
+      Class<?> s = cl.loadClass(STACK);
+      runtime.panelTracking = field(s, "mPanelTracking", boolean.class);
+      Method height = s.getDeclaredMethod("setExpandedHeight", float.class);
+      if (height.getReturnType() == void.class && runtime.stackCompatible) {
+        hook(height)
+            .intercept(
+                chain -> {
+                  Object result = chain.proceed();
+                  try {
+                    runtime.expandedHeight((View) chain.getThisObject(), (float) chain.getArg(0));
+                  } catch (RuntimeException | LinkageError e) {
+                    runtime.failure(e);
+                  }
+                  return result;
+                });
+        runtime.hooks++;
+      }
+    } catch (ReflectiveOperationException | LinkageError | RuntimeException ignored) {
+    }
     // Process liveness is independent of successful Samsung adapters.
     try {
       after(

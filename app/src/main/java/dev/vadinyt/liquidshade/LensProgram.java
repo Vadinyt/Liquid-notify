@@ -25,6 +25,8 @@ uniform float4 detail;
 // xy = contact in normalised lens space, z = has real image, w = density in px/dp.
 uniform float4 surface;
 uniform float4 artUV;
+// In panel-local pixels. The complete native header stays transparent.
+uniform float3 body;
 
 float2 toBackdrop(float2 p) {
   if(surface.z>1.5)return p;
@@ -62,7 +64,11 @@ half4 main(float2 point) {
   float2 n=(len>.001?outer/max(.001,len):(q.x>q.y?float2(1,0):float2(0,1)))*sign(p);
   float inset=max(0.0,-sd), bevel=max(1.0,optic.y);
   float band=clamp(1.0-inset/bevel,0.0,1.0);
-  float slope=pow(band,1.65-.95*optic.z);
+  // Rounded lens shoulder. Snell displacement approaches the edge tangentially
+  // and returns to zero with zero slope where it joins the flat face.
+  float angle=band*band*(3.0-2.0*band)*(1.08+.33*optic.z);
+  float bent=angle-asin(clamp(sin(angle)/1.49,-1.0,1.0));
+  float slope=tan(bent);
   float strength=optic.x*slope;
   float2 offset=n*strength*(.58+.9*optic.z)*(1.0+.43*spring*locality);
   offset+=fromTouch*optic.x*.48*spring*locality*(1.0-band);
@@ -80,9 +86,20 @@ half4 main(float2 point) {
   float contactLight=abs(spring)*locality*((.10+.42*glint)*(.24+.76*band)+.14*ridge);
   float shine=clamp(spec+reflection+(.55*finish.w+.45*finish.z)*contactLight,0.0,.92);
   float shadow=clamp((.09*finish.w+.045*optic.z)*slope*(1.0-max(facing,0.0)),0.0,.25);
+  float coverage=body.y>0.0 && body.x>=0.0 && surface.z<1.5 ?
+    smoothstep(body.x,body.x+body.y,xy.y) : 1.0;
+  if(body.z>.5 && coverage<=0.0)return half4(0);
+  if(body.z<.5) {
+    // A narrow reflected light below the bright lip changes sides around the rounded corners.
+    float arch=exp(-abs(inset/bevel-.29)*8.5);
+    float reverse=exp(-abs(inset/bevel-.68)*8.0);
+    shine=clamp(shine+finish.w*(.38*arch*max(facing,.0)+.30*reverse*max(-facing,.0)),0.0,.92);
+  }
   float alpha=aa*detail.x;
+  if(body.z>.5)alpha*=coverage;
   if(detail.y>0.0)alpha*=1.0-smoothstep(1.0,max(1.01,detail.y),inset);
-  if(surface.z<.5) {
+  half4 clearGlass=half4(0);
+  if(surface.z<.5 || (coverage<1.0 && body.z<.5)) {
     // Premultiplied decoration over the real compositor output. No image sampling here.
     // Two bands on opposite sides of a curved bevel keep the relief legible on flat OEM blur.
     float width=max(bevel,1.0);
@@ -100,7 +117,8 @@ half4 main(float2 point) {
     body*=1.0-shadow;bodyA+=shadow*(1.0-bodyA);
     float3 rgb=body*(1.0-shine)+flags.rgb*shine;
     float a=bodyA*(1.0-shine)+shine;
-    return half4(clamp(rgb,0.0,a)*alpha,a*alpha);
+    clearGlass=half4(clamp(rgb,0.0,a)*alpha,a*alpha);
+    if(surface.z<.5 || coverage<=0.0)return clearGlass;
   }
   float2 displaced=toBackdrop(point+offset);
   half3 c=softAt(displaced);
@@ -120,7 +138,8 @@ half4 main(float2 point) {
   c=mix(c,half3(accent.rgb),tone.z);
   c=mix(c,half3(wash.z),detail.w)*(1.0-shadow);
   c=mix(c,half3(flags.rgb),shine);
-  return half4(clamp(c,0.0,1.0)*alpha,alpha);
+  half4 imageGlass=half4(clamp(c,0.0,1.0)*alpha,alpha);
+  return body.z<.5 ? mix(clearGlass,imageGlass,coverage) : imageGlass;
 }
 """;
 }

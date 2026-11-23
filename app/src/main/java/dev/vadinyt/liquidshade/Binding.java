@@ -16,7 +16,9 @@ final class Binding {
   Drawable original;
   Material glass, idle;
   boolean overlay;
-  int revealEpoch;
+  int revealEpoch, queuedEpoch;
+  long revealAfter;
+  RecoilFeedback feedback;
   boolean swipeStarted;
   private WeakReference<ProgressBar> bar;
   private ColorStateList oldTint, appliedTint;
@@ -47,6 +49,11 @@ final class Binding {
   void uninstall() {
     swipeStarted = false;
     View v = view.get();
+    if (feedback != null && layers != null && layers.getDrawable(1) == feedback) {
+      layers.setDrawable(1, feedback.original);
+      if (v != null) v.invalidate();
+    }
+    feedback = null;
     if (glass != null && v != null && owns(v)) {
       if (layers != null) {
         if (original instanceof GradientDrawable g && glass.getCornerRadii() != null)

@@ -93,3 +93,13 @@ alpha = mat[:, :, 3:4].astype(float) / 255
 composited = mat[:, :, :3] * alpha + (1 - alpha) * [16, 23, 36]
 assert np.linalg.norm(composited[36, 120]-composited[80, 120]) > 15, "bevel disappears on a dark native shade"
 print("PASS: internal bevel is visible above a uniform dark system backdrop")
+
+# The old full-window shader covered headers from other siblings. Check alpha on every
+# column above the native header boundary, including a shaded / dimmed input.
+body = {"extent": (120, 80), "radii": (0, 0), "body": (41, 16, 1),
+        "wash": (.17, .09, 0, 0), "shade": (.2, .5, .8, .2)}
+underlay = render(0, overrides=body)
+assert np.all(underlay[:41,:,3] == 0)
+assert 40 < underlay[48,100,3] < 180
+assert np.all(underlay[62:120,:,3] == 255)
+print("PASS: untouched native header, soft transition, fully drawn shade below it")

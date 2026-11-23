@@ -97,6 +97,7 @@ final class Material extends GradientDrawable {
     View v = owner.get();
     Rect b = getBounds();
     if (v == null || b.isEmpty()) return;
+    previewPose.entering = entering;
     previewPose.set(
         b.left,
         b.top,
@@ -122,7 +123,17 @@ final class Material extends GradientDrawable {
 
   private float topOem = Float.NaN, bottomOem = Float.NaN, response;
   private ValueAnimator spring;
-  private boolean pressed;
+  private boolean pressed, entering;
+  private float swipePull;
+  private int headerBottom = -1;
+  private final Rect bodyBounds = new Rect();
+
+  void protectHeader(int bottom) {
+    if (headerBottom == bottom) return;
+    headerBottom = bottom;
+    invalidateSelf();
+  }
+
   private final Path clip = new Path();
   private final float[] corners = new float[8];
 
@@ -201,6 +212,43 @@ final class Material extends GradientDrawable {
     }
   }
 
+  private void drawMotion(View host) {
+    tickHasRow =
+        rowMotion != null
+            && rowMotion.frame(
+                host,
+                getBounds(),
+                response,
+                cfg.unit(MOTION_AMOUNT),
+                fingerX,
+                fingerY,
+                entering,
+                swipePull);
+    frameReported = false;
+    invalidateSelf();
+    host.invalidate();
+  }
+
+  void swipe(float nativeTranslation) {
+    View v = owner.get();
+    if (v == null || rowMotion == null || v.getWidth() == 0 || !Float.isFinite(nativeTranslation))
+      return;
+    float pull = Math.max(-1, Math.min(1, nativeTranslation / (.42f * v.getWidth())));
+    if (cfg.get(MOTION_AMOUNT) == 0
+        || !cfg.on(MOTION_ON)
+        || cfg.get(PERFORMANCE) == 2
+        || !ValueAnimator.areAnimatorsEnabled()) pull = 0;
+    if (pull != 0 && cfg.on(REDUCE)) {
+      android.view.accessibility.AccessibilityManager a =
+          v.getContext().getSystemService(android.view.accessibility.AccessibilityManager.class);
+      if (a != null && a.isTouchExplorationEnabled()) pull = 0;
+    }
+    if (Math.abs(pull - swipePull) < .002f && (pull != 0 || swipePull == 0)) return;
+    if (swipePull == 0) rowMotion.begin();
+    swipePull = pull;
+    drawMotion(v);
+  }
+
   void pulse(float impulse) {
     if (!contact) {
       fingerX = -.42f;
@@ -232,20 +280,13 @@ final class Material extends GradientDrawable {
           a -> {
             float t = a.getAnimatedFraction();
             if (t >= .9999f) physics.finish();
-            else physics.sample(t * 1.05f);
+            else physics.sample(t * (entering ? .70f : 1.05f));
             response = Math.max(-.7f, Math.min(1.4f, physics.value));
             View host = owner.get();
-            if (host != null) {
-              tickHasRow =
-                  rowMotion != null
-                      && rowMotion.frame(
-                          host, getBounds(), response, cfg.unit(MOTION_AMOUNT), fingerX, fingerY);
-              frameReported = false;
-              invalidateSelf();
-              host.invalidate();
-            }
+            if (host != null) drawMotion(host);
           });
     } else spring.cancel();
+    entering = reveal;
     if (rowMotion != null) rowMotion.begin();
     if (reveal) {
       physics.reset();
@@ -267,12 +308,12 @@ final class Material extends GradientDrawable {
             || !next.on(MOTION_ON)
             || next.get(PERFORMANCE) == 2
             || (contact && !next.on(PRESS)))
-        && (contact || response != 0 || (spring != null && spring.isRunning()))) {
+        && (contact || response != 0 || swipePull != 0 || (spring != null && spring.isRunning()))) {
       if (spring != null) spring.cancel();
       if (rowMotion != null) rowMotion.clear();
       tickHasRow = false;
       contact = false;
-      response = 0;
+      response = swipePull = 0;
       physics.reset();
     }
     cfg = next;
@@ -287,7 +328,7 @@ final class Material extends GradientDrawable {
     if (rowMotion != null) rowMotion.clear();
     tickHasRow = false;
     if (spring != null) spring.cancel();
-    response = 0;
+    response = swipePull = 0;
     contact = false;
     physics.reset();
     lastBackend = 0;
@@ -388,6 +429,10 @@ final class Material extends GradientDrawable {
     View v = owner.get(), frame = anchor.get();
     if (v == null || frame == null || cfg == null || getBounds().isEmpty() || alpha == 0) return;
     boolean media = kind == Kind.MEDIA, field = kind == Kind.SHADE, card = kind == Kind.CARD;
+    if (field && headerBottom >= getBounds().bottom) {
+      nativeBlur.suspend();
+      return;
+    }
     float dp = v.getResources().getDisplayMetrics().density;
     box.set(getBounds());
     if (card) box.inset(0, Math.min(box.height() * .12f, dp * 4 * cfg.unit(SPACING)));
@@ -429,7 +474,7 @@ final class Material extends GradientDrawable {
     float amount =
         field
             ? 0f
-            : .02f + .25f * cfg.unit(TINT) + .30f * cfg.unit(media ? MEDIA_OPACITY : CARD_OPACITY);
+            : .012f + .22f * cfg.unit(TINT) + .25f * cfg.unit(media ? MEDIA_OPACITY : CARD_OPACITY);
     float edge =
         field
             ? 0f
@@ -438,7 +483,7 @@ final class Material extends GradientDrawable {
     float shadeBlur = cfg.on(SHADE_ON) ? cfg.unit(SHADE_BLUR) : 0f;
     float spread =
         dp
-            * (16 * shadeBlur * shadeBlur
+            * (24 * shadeBlur * (.35f + .65f * shadeBlur)
                 + (field
                     ? 0
                     : 22
@@ -487,11 +532,11 @@ final class Material extends GradientDrawable {
           fullBound = full;
         }
         float bevel =
-            Math.min(limit, dp * (1.5f + 19 * cfg.unit(BEVEL)) * (.8f + .6f * cfg.unit(DEPTH)));
+            Math.min(limit, dp * (2f + 23 * cfg.unit(BEVEL)) * (.8f + .6f * cfg.unit(DEPTH)));
         float displacement =
             field
                 ? 0
-                : dp * (2 + 20 * cfg.unit(DEPTH)) * cfg.unit(media ? MEDIA_REFRACTION : REFRACTION);
+                : dp * (3 + 25 * cfg.unit(DEPTH)) * cfg.unit(media ? MEDIA_REFRACTION : REFRACTION);
         program.setFloatUniform("center", box.centerX(), box.centerY());
         program.setFloatUniform("extent", box.width() / 2, box.height() / 2);
         program.setFloatUniform("mapX", currentMap[0], currentMap[1], currentMap[2]);
@@ -510,6 +555,7 @@ final class Material extends GradientDrawable {
             "surface", fingerX, fingerY, album != null ? 2 : hasImage ? 1 : 0, dp);
         program.setFloatUniform("artUV", artUV[0], artUV[1], artUV[2], artUV[3]);
         program.setFloatUniform("radii", top, bottom);
+        program.setFloatUniform("body", (float) headerBottom, 22f * dp, field ? 1f : 0f);
         program.setFloatUniform(
             "optic",
             displacement,
@@ -554,7 +600,12 @@ final class Material extends GradientDrawable {
     // Native transparency preserves Samsung's existing compositor blur where available.
     paint.setShader(null);
     paint.setStyle(Paint.Style.FILL);
-    if (field) nativeBlur.draw(v, canvas, getBounds(), Math.round(spread));
+    if (field) {
+      bodyBounds.set(getBounds());
+      bodyBounds.top = Math.max(bodyBounds.top, headerBottom);
+      nativeBlur.draw(v, canvas, bodyBounds, Math.round(spread));
+      box.top = Math.max(box.top, headerBottom);
+    }
     corners[0] = corners[1] = corners[2] = corners[3] = top;
     corners[4] = corners[5] = corners[6] = corners[7] = bottom;
     clip.rewind();

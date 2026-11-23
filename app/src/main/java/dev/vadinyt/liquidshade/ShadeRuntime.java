@@ -49,10 +49,20 @@ final class ShadeRuntime
   private int localFailures, revision;
   private long lastFailure, photoRevision, lastBackdropRequest;
   private final android.graphics.Rect visibleRect = new android.graphics.Rect();
-  private int openEpoch, openingRows, submittedFrames;
+  private int openEpoch, openingRows, submittedFrames, headerDimension;
+  private int bodyStart = Integer.MAX_VALUE;
+  private float openingHeight;
+  private long fullyVisibleAt, nextWake, heightChangedAt;
+  Field panelTracking;
+  private final int[] panelLocation = new int[2], stackLocation = new int[2];
+  Field ambient, scrimTop;
+  private Object stackState;
+  private boolean signedHeight;
+  private WeakReference<View> headerIcons = new WeakReference<>(null);
   private long openedAt, lastLog;
   private final Runnable revealFrame =
       () -> {
+        nextWake = 0;
         View host = stack.get();
         if (open && host != null) host.postInvalidateOnAnimation();
       };
@@ -233,7 +243,7 @@ final class ShadeRuntime
               && SystemClock.elapsedRealtime() - lastLog > 1800) {
             lastLog = SystemClock.elapsedRealtime();
             diagnostic.accept(
-                "1.2 source="
+                "1.3 source="
                     + sourceLast
                     + " card="
                     + cardBackend
@@ -323,13 +333,35 @@ final class ShadeRuntime
       View prior = stage.get();
       if (prior != null) drop(prior);
       stack = new WeakReference<>(v);
-      View frame = ancestor(v, ShadeModule.PKG + ".shade.NotificationPanelView");
-      if (frame == null
-          || (frame.getBackground() != null
-              && !(frame.getBackground() instanceof GradientDrawable
-                  || frame.getBackground() instanceof ColorDrawable))) frame = v;
-      stage = new WeakReference<>(frame);
-      register(frame, SHADE);
+      View window = ancestor(v, ShadeModule.PKG + ".shade.NotificationShadeWindowView");
+      View panel = window == null ? null : named(window, "notification_panel");
+      boolean verified =
+          panel != null
+              && panel.getParent() == window
+              && classIs(panel, ShadeModule.PKG + ".shade.NotificationPanelView")
+              && (panel.getBackground() == null
+                  || panel.getBackground() instanceof ColorDrawable fill
+                      && Color.alpha(fill.getColor()) == 0);
+      // A reparented stack may sit above a separate header. Its backing is allowed only with
+      // a verified Samsung body boundary and a transparent original background.
+      stage = new WeakReference<>(verified ? panel : v);
+      bodyStart = Integer.MAX_VALUE;
+      stackState = ambient == null ? null : ambient.get(v);
+      boolean boundedStack =
+          window != null
+              && stackState != null
+              && scrimTop != null
+              && (v.getBackground() == null
+                  || v.getBackground() instanceof ColorDrawable fill
+                      && Color.alpha(fill.getColor()) == 0);
+      if (verified || boundedStack) {
+        int dim =
+            app.getResources()
+                .getIdentifier("large_screen_shade_header_height", "dimen", ShadeModule.PKG);
+        headerDimension = dim == 0 ? 0 : v.getResources().getDimensionPixelSize(dim);
+        headerIcons = new WeakReference<>(named(window, "shade_header_system_icons"));
+        register(verified ? panel : v, SHADE);
+      }
       v.addOnAttachStateChangeListener(this);
       v.getViewTreeObserver().addOnPreDrawListener(this);
     }
@@ -343,14 +375,25 @@ final class ShadeRuntime
     if (next != open) {
       open = next;
       unlocked = activeUserUnlocked();
+      main.removeCallbacks(revealFrame);
+      nextWake = 0;
+      openingHeight = 0;
+      signedHeight = false;
+      fullyVisibleAt = 0;
       if (!next) safeRefresh();
       else {
         openEpoch++;
         openingRows = 0;
         lastMounted = 0;
         openedAt = SystemClock.elapsedRealtime();
-        main.removeCallbacks(revealFrame);
-        main.postDelayed(revealFrame, 150);
+        if (v instanceof ViewGroup rows) {
+          for (int i = 0; i < rows.getChildCount(); i++) {
+            View direct = rows.getChildAt(i);
+            if (classIs(direct, ShadeModule.ROW) && !rowBackgrounds.containsKey(direct))
+              row(direct);
+          }
+        }
+        wakeAt(openedAt + 220);
         if ((wallpaper.status == WallpaperSource.HOME_FRAME
                 || wallpaper.status == WallpaperSource.LIVE)
             && openedAt - lastBackdropRequest > 4500) requested = false;
@@ -359,6 +402,56 @@ final class ShadeRuntime
             && SystemClock.elapsedRealtime() - lastBackdropRequest > 60000) requested = false;
         schedule();
       }
+    }
+  }
+
+  void expandedHeight(View view, float height) {
+    if (open && view == stack.get() && Float.isFinite(height) && height > 0) {
+      if (openingHeight != height) heightChangedAt = SystemClock.elapsedRealtime();
+      signedHeight = true;
+      openingHeight = height;
+    }
+  }
+
+  private void wakeAt(long when) {
+    if (nextWake != 0 && nextWake <= when) return;
+    main.removeCallbacks(revealFrame);
+    nextWake = when;
+    main.postDelayed(revealFrame, Math.max(1, when - SystemClock.elapsedRealtime()));
+  }
+
+  // Use SystemUI's own notification/header touch boundary. A conservative status/date reserve
+  // also protects heads-up transitions when Samsung reports a zero or stale scrim boundary.
+  private void updateBody(View panel, View list) {
+    if (panel == null || list == null) return;
+    panel.getLocationOnScreen(panelLocation);
+    list.getLocationOnScreen(stackLocation);
+    WindowInsets insets = panel.getRootWindowInsets();
+    if (insets == null || panel.getHeight() == 0) return;
+    float dp = panel.getResources().getDisplayMetrics().density;
+    int bars =
+        insets.getInsetsIgnoringVisibility(
+                WindowInsets.Type.statusBars() | WindowInsets.Type.displayCutout())
+            .top;
+    int bottom = Math.max(headerDimension, bars + Math.round(93 * dp)) - panelLocation[1];
+    View icons = headerIcons.get();
+    if (icons != null && icons.isShown() && icons.getGlobalVisibleRect(visibleRect))
+      bottom = Math.max(bottom, visibleRect.bottom - panelLocation[1]);
+    if (stackState != null && scrimTop != null) {
+      try {
+        float edge = scrimTop.getFloat(stackState);
+        if (Float.isFinite(edge) && edge > 0)
+          bottom = Math.max(bottom, Math.round(edge) + stackLocation[1] - panelLocation[1]);
+      } catch (IllegalAccessException e) {
+        stackState = null;
+      }
+    }
+    int next = Math.min(panel.getHeight(), Math.max(0, bottom));
+    if (bodyStart == next) return;
+    bodyStart = next;
+    for (int i = 0; i < moving.size(); i++) {
+      Material glass = moving.get(i).glass;
+      if (glass != null) glass.protectHeader(next);
     }
   }
 
@@ -409,6 +502,7 @@ final class ShadeRuntime
     WeakReference<View> ref = rowBackgrounds.get(row);
     Binding b = ref == null ? null : surfaces.get(ref.get());
     if (b == null || b.glass == null) return;
+    b.glass.swipe(translation);
     float threshold = 12 * row.getResources().getDisplayMetrics().density;
     if (Math.abs(translation) < threshold * .25f) b.swipeStarted = false;
     else if (!b.swipeStarted && Math.abs(translation) > threshold) {
@@ -457,6 +551,10 @@ final class ShadeRuntime
       open = false;
       stack.clear();
       stage.clear();
+      stackState = null;
+      headerIcons.clear();
+      main.removeCallbacks(revealFrame);
+      nextWake = 0;
       restore();
     }
   }
@@ -505,6 +603,7 @@ final class ShadeRuntime
             this::safeRefresh);
       }
       if (wallpaper.status != WallpaperSource.UNKNOWN) sourceLast = wallpaper.status;
+      if (open) updateBody(anchor, stack.get());
       if (anchor != null) applyOne(anchor);
       for (View v : new ArrayList<>(surfaces.keySet())) if (v != null && v != anchor) applyOne(v);
       report();
@@ -597,6 +696,10 @@ final class ShadeRuntime
         b.layers = layer;
         b.glass = glass;
         layer.setDrawable(0, glass);
+        if (layer.getDrawable(0) == glass) {
+          b.feedback = new RecoilFeedback((GradientDrawable) layer.getDrawable(1));
+          layer.setDrawable(1, b.feedback);
+        }
       } else if (b.kind == MEDIA) {
         b.glass = glass;
         b.overlay = true;
@@ -633,7 +736,8 @@ final class ShadeRuntime
             && back.glass != null
             && back.owns(frame)
             && !back.glass.shaderFailed
-            && (v == frame || (back.glass.hasDrawnBackdrop() && ancestorView(v, frame)));
+            && (v == frame || back.glass.hasDrawnBackdrop() && sharesBackdrop(v, frame));
+    g.protectHeader(bodyStart);
     if (b.kind == CARD) {
       View row = ancestor(v, ShadeModule.ROW);
       if (row != null) g.bindRow(row);
@@ -653,6 +757,19 @@ final class ShadeRuntime
     v.invalidate();
   }
 
+  private boolean sharesBackdrop(View v, View panel) {
+    if (ancestorView(v, panel)) return true;
+    if (!(panel.getParent() instanceof ViewGroup window)) return false;
+    View shared =
+        ancestor(
+            v,
+            ShadeModule.PKG + ".statusbar.notification.stack.ui.view.SharedNotificationContainer");
+    return shared != null
+        && shared.getParent() == window
+        && panel.getZ() <= shared.getZ()
+        && window.indexOfChild(panel) < window.indexOfChild(shared);
+  }
+
   private static boolean ancestorView(View v, View frame) {
     for (View p = v; p != null; p = p.getParent() instanceof View up ? up : null)
       if (p == frame) return true;
@@ -662,6 +779,24 @@ final class ShadeRuntime
   @Override
   public boolean onPreDraw() {
     if (!open || moving.isEmpty()) return true;
+    View panel = stage.get(), list = stack.get();
+    if (panel == null || list == null) return true;
+    updateBody(panel, list);
+    long now = SystemClock.elapsedRealtime();
+    int height = Math.max(1, list.getRootView().getHeight());
+    if (fullyVisibleAt == 0) {
+      boolean settled = signedHeight && now - heightChangedAt >= 280;
+      if (settled && panelTracking != null) {
+        try {
+          settled = !panelTracking.getBoolean(list);
+        } catch (IllegalAccessException unavailable) {
+          settled = false;
+        }
+      }
+      if (openingHeight >= height * .78f || settled || (!signedHeight && now - openedAt >= 380))
+        fullyVisibleAt = now;
+      else if (signedHeight && now - heightChangedAt < 280) wakeAt(heightChangedAt + 285);
+    }
     // Recording translations can move an existing display list without re-recording it.
     // Invalidate only those lenses whose sample origin moved relative to the wallpaper.
     for (int i = 0; i < moving.size(); i++) {
@@ -669,19 +804,30 @@ final class ShadeRuntime
       View v = b.view.get();
       Material m = b.glass;
       if (b.kind == CARD
-          && SystemClock.elapsedRealtime() - openedAt >= 120
           && b.revealEpoch != openEpoch
           && v != null
           && m != null
-          && openingRows < 7
-          && SystemClock.elapsedRealtime() - openedAt < 950
+          && openingRows < 12
+          && (fullyVisibleAt == 0 || now - fullyVisibleAt < 1150)
+          && (signedHeight || now - openedAt >= 380)
           && v.isShown()
           && v.getGlobalVisibleRect(visibleRect)
-          && visibleRect.height() >= 24) {
-        b.revealEpoch = openEpoch;
-        openingRows++;
-        m.reveal();
+          && visibleRect.height()
+              >= Math.min(v.getHeight() / 2, 48 * v.getResources().getDisplayMetrics().density)) {
+        float position = Math.max(0, Math.min(1, visibleRect.centerY() / (float) height));
+        if (fullyVisibleAt != 0 || openingHeight >= height * Math.max(.42f, position * .85f)) {
+          if (b.queuedEpoch != openEpoch) {
+            b.queuedEpoch = openEpoch;
+            b.revealAfter = now + Math.round(18 + 160 * position);
+          }
+          if (now >= b.revealAfter) {
+            b.revealEpoch = openEpoch;
+            openingRows++;
+            m.reveal();
+          } else wakeAt(b.revealAfter);
+        }
       }
+      if (!signedHeight && fullyVisibleAt == 0) wakeAt(openedAt + 385);
       if (b.kind == MEDIA && v instanceof ImageView art && b.artChanged(art)) schedule();
       if (v != null && m != null && v.isShown() && m.positionChanged()) v.invalidate();
     }
