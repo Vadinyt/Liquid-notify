@@ -43,13 +43,15 @@ public final class GlassInstrumentation extends Instrumentation {
           new Intent(getTargetContext(), SettingsActivity.class)
               .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
       activity = startActivitySync(launch);
+      String live = testChangingScene();
+      testMediaSlots();
       runOnMainSync(this::install);
       waitForIdleSync();
       SystemClock.sleep(550);
       Rect before = marker(copy());
       check(before.width() > 15, "marker absent at rest: " + before);
       int[] at = new int[2];
-      runOnMainSync(() -> row.getLocationOnScreen(at));
+      runOnMainSync(() -> row.getLocationInWindow(at));
       float x = at[0] + 239, y = at[1] + 48;
       long down = SystemClock.uptimeMillis();
       pointer(MotionEvent.ACTION_DOWN, down, x, y);
@@ -117,8 +119,6 @@ public final class GlassInstrumentation extends Instrumentation {
           });
       int headerPixels = testNativeHeader();
       String finish = testOpticalFinish();
-      String live = testChangingScene();
-      testMediaSlots();
       report.putString(
           "stream",
           "LIQUIDSHADE_DEVICE_PASS marker="
@@ -541,7 +541,9 @@ public final class GlassInstrumentation extends Instrumentation {
     MotionEvent ev = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0);
     ev.setSource(InputDevice.SOURCE_TOUCHSCREEN);
     try {
-      sendPointerSync(ev);
+      // Dispatch exclusively into the test activity. The native window, row and click listener
+      // still perform hit testing; unrelated emulator overlays never receive this pointer.
+      runOnMainSync(() -> activity.getWindow().getDecorView().dispatchTouchEvent(ev));
     } finally {
       ev.recycle();
     }
